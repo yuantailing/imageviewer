@@ -1,17 +1,20 @@
-QT += widgets
-qtHaveModule(printsupport): QT += printsupport
+#-------------------------------------------------
+#
+# Project created by QtCreator 2016-11-03T13:50:51
+#
+#-------------------------------------------------
 
-HEADERS       = imageviewer.h
-SOURCES       = imageviewer.cpp \
-                main.cpp
+QT       += core gui
 
-# install
-target.path = $$[QT_INSTALL_EXAMPLES]/widgets/widgets/imageviewer
-INSTALLS += target
+greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+
+TARGET = imageviewer
+TEMPLATE = app
 
 
-wince*: {
-   DEPLOYMENT_PLUGIN += qjpeg qgif
-}
+SOURCES += main.cpp\
+        imageviewer.cpp \
+    imageannotation.cpp
 
-simulator: warning(This example might not fully work on Simulator platform)
+HEADERS  += imageviewer.h \
+    imageannotation.h
