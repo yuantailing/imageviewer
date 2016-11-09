@@ -8,14 +8,9 @@ ImageViewer::ImageViewer(QWidget *parent)
     createMenus();
 
     centralWidget = new QWidget(this);
-    //imageLabel = new QLabel(centralWidget);
-    //imageLabel->setBackgroundRole(QPalette::Base);
-    //imageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-    //imageLabel->setScaledContents(true);
     resetHistory();
     image = new QImage;
     scaledImage = new QImage;
-    resetLocation();
     applyImage(QImage("148.jpg"));           //! Test
     controlPressed = false;
     mousePressed = false;
@@ -90,10 +85,10 @@ void ImageViewer::paintEvent(QPaintEvent *) {
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control)
         controlPressed = true;
-    if (event->key() == Qt::Key_Return) {
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         int wordNeeded = anno.numWordNeeded();
         if (wordNeeded == 0) {
-            anno.onReturnPressed();
+            anno.onEnterPressed();
             update();
             wordNeeded = anno.numWordNeeded();
         }
@@ -180,8 +175,12 @@ void ImageViewer::createActions() {
     redoAct->setShortcuts({tr("Ctrl+Y"), tr("Ctrl+Shift+Z")});
     connect(redoAct, SIGNAL(triggered()), this, SLOT(redo()));
 
+    switchToolAct = new QAction(tr("&Switch tool"), this);
+    switchToolAct->setShortcut(tr("Tab"));
+    connect(switchToolAct, SIGNAL(triggered()), this, SLOT(switchTool()));
+
     zoomInAct = new QAction(tr("Zoom &In (25%)"), this);
-    zoomInAct->setShortcut(tr("Ctrl++"));
+    zoomInAct->setShortcuts({tr("Ctrl++"), tr("Ctrl+=")});
     connect(zoomInAct, SIGNAL(triggered()), this, SLOT(zoomIn()));
 
     zoomOutAct = new QAction(tr("Zoom &Out (25%)"), this);
@@ -200,6 +199,7 @@ void ImageViewer::createMenus() {
     editMenu = new QMenu(tr("&Edit"), this);
     editMenu->addAction(undoAct);
     editMenu->addAction(redoAct);
+    editMenu->addAction(switchToolAct);
 
     viewMenu = new QMenu(tr("&View"), this);
     viewMenu->addAction(zoomInAct);
@@ -213,7 +213,10 @@ void ImageViewer::createMenus() {
 
 void ImageViewer::applyImage(const QImage &im) {
     *image = im;
+    resetLocation();
     updateScaledImage();
+    resetHistory();
+    update();
 }
 
 void ImageViewer::updateScaledImage() {
@@ -224,7 +227,8 @@ void ImageViewer::updateScaledImage() {
 void ImageViewer::resetHistory() {
     redoHistory.clear();
     history.clear();
-    history.push_back(ImageAnnotation());
+    anno = ImageAnnotation();
+    history.push_back(anno);
 }
 
 void ImageViewer::addHistoryPoint() {
@@ -278,6 +282,12 @@ void ImageViewer::redo() {
     update();
 }
 
+void ImageViewer::switchTool() {
+    anno.onSwitchTool();
+    addHistoryPoint();
+    update();
+}
+
 void ImageViewer::zoomIn() {
     if (scaleFactor > 2.0)
         return;
@@ -307,5 +317,7 @@ void ImageViewer::setLocation(QPoint loc) {
 
 void ImageViewer::resetLocation() {
     scaleFactor = 0.4;
+    updateScaledImage();
     setLocation(QPoint(0, 0));
+    update();
 }

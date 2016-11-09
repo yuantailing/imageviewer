@@ -28,18 +28,21 @@ public:
     int numPoint;
     QLineF base;
     QLineF top;
+    bool isVerticalText;
     bool stroking;
     QLineF stroke;
 
 public:
     PerspectiveHelper() {
         numPoint = 0;
+        isVerticalText = false;
         stroking = false;
     }
 
     void onStartPoint(QPointF p, BlockAnnotation *block);
     void onPendingPoint(QPointF p, BlockAnnotation *block);
     void onEndPoint(QPointF p, BlockAnnotation *block);
+    void onSwitchTool(BlockAnnotation *block);
     QVector<QPolygonF> getHelperPoly() const;
     QVector<QPolygonF> getPendingCharacterPoly() const;
 
@@ -74,6 +77,11 @@ public:
             perspectiveHelper.onEndPoint(p, this);
     }
 
+    void onSwitchTool() {
+        if (helperType == PERSPECTIVE_HELPER)
+            perspectiveHelper.onSwitchTool(this);
+    }
+
     int numWordNeeded() const {
         return characters.size();
     }
@@ -82,7 +90,7 @@ public:
 
     void onInputString(QString const &s);
 
-    void onReturnPressed();
+    void onEnterPressed();
 
     QVector<QPolygonF> getHelperPoly() const {
         if (helperType == PERSPECTIVE_HELPER)
@@ -126,6 +134,10 @@ public:
         blocks.last().onEndPoint(p);
     }
 
+    void onSwitchTool() {
+        blocks.last().onSwitchTool();
+    }
+
     int numWordNeeded() const {
         return blocks.last().numWordNeeded();
     }
@@ -138,8 +150,8 @@ public:
         blocks.last().onInputString(s);
     }
 
-    void onReturnPressed() {
-        blocks.last().onReturnPressed();
+    void onEnterPressed() {
+        blocks.last().onEnterPressed();
     }
 
     void onNewBlock() {

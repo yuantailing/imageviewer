@@ -42,6 +42,7 @@ private slots:
     void open();
     void undo();
     void redo();
+    void switchTool();
     void zoomIn();
     void zoomOut();
     void setLocation(QPoint loc);
@@ -51,6 +52,7 @@ private:
     QAction *openAct;
     QAction *undoAct;
     QAction *redoAct;
+    QAction *switchToolAct;
     QAction *zoomInAct;
     QAction *zoomOutAct;
     QAction *resetLocationAct;
@@ -66,7 +68,6 @@ private:
     bool drawingLabel;
 
     QWidget *centralWidget;
-    //QLabel *imageLabel;
     QImage *image;
     QImage *scaledImage;
     QPoint imageLeftTop;
