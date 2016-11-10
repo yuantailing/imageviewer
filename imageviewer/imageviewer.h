@@ -34,7 +34,7 @@ private:
     void applyImage(QImage const &im);
     void updateScaledImage();
     void resetHistory();
-    void addHistoryPoint();
+    void addHistoryPoint(bool weak = false);
     QPointF toImageUV(QPoint screenUV);
     QPoint toScreenUV(QPointF imageUV);
 
@@ -68,6 +68,7 @@ private:
     bool drawingLabel;
 
     QWidget *centralWidget;
+    QLabel* statusLabel;
     QImage *image;
     QImage *scaledImage;
     QPoint imageLeftTop;
@@ -76,6 +77,7 @@ private:
     ImageAnnotation anno;
     QVector<ImageAnnotation> history;
     QVector<ImageAnnotation> redoHistory;
+    bool keepHistoryOnUndo;
 };
 
 #endif // IMAGEVIEWER_H

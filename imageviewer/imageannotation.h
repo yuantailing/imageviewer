@@ -12,10 +12,6 @@ class PerspectiveHelper;
 class BlockAnnotation;
 class ImageAnnotation;
 
-// class AnnotationOptions {
-//
-// };
-
 // 标注一个字
 class CharacterAnnotation {
 public:
@@ -25,29 +21,29 @@ public:
 
 class PerspectiveHelper {
 public:
-    int numPoint;
-    QLineF base;
-    QLineF top;
-    bool isVerticalText;
-    bool stroking;
+    int numPoint;      // 已确定的点数
+    QLineF base;       // 用户输入的第一条线
+    QLineF top;        // 用户输入的第二条线
+    bool toolSwitched; // false：横排文字垂直锁定 true：解除垂直锁定
+    bool stroking;     // 是否正在标注文字区域
     QLineF stroke;
+    // 自动检测框选文字方向是否与base同向 / 强制与base同向 / 强制与base垂直
+    enum TextDirection { DIRECTION_AUTO, DIRECTION_BY_BASE, DIRECTION_TO_BASE } textDirection;
 
 public:
-    PerspectiveHelper() {
-        numPoint = 0;
-        isVerticalText = false;
-        stroking = false;
-    }
-
+    PerspectiveHelper();
     void onStartPoint(QPointF p, BlockAnnotation *block);
     void onPendingPoint(QPointF p, BlockAnnotation *block);
-    void onEndPoint(QPointF p, BlockAnnotation *block);
+    bool onEndPoint(QPointF, BlockAnnotation *) { return stroking; }
     void onSwitchTool(BlockAnnotation *block);
-    QVector<QPolygonF> getHelperPoly() const;
+    QPolygonF poly() const;
+    QVector<QPolygonF> getHelperPoly() const { return QVector<QPolygonF>({poly()}); }
     QVector<QPolygonF> getPendingCharacterPoly() const;
+    QString getTips() const;
 
 private:
-    static bool isIntersect(QLineF a, QLineF b);
+    TextDirection detectTextDirection(QLineF stroke) const;
+    bool isHorizontalText(QLineF stroke) const;
 };
 
 class BlockAnnotation {
@@ -72,9 +68,10 @@ public:
             perspectiveHelper.onPendingPoint(p, this);
     }
 
-    void onEndPoint(QPointF p) {
+    bool onEndPoint(QPointF p) {
         if (helperType == PERSPECTIVE_HELPER)
-            perspectiveHelper.onEndPoint(p, this);
+            return perspectiveHelper.onEndPoint(p, this);
+        return false;
     }
 
     void onSwitchTool() {
@@ -107,6 +104,12 @@ public:
     QVector<CharacterAnnotation> const &getCharacterAnnotation() const {
         return characters;
     }
+
+    QString getTips() const {
+        if (helperType == PERSPECTIVE_HELPER)
+            return perspectiveHelper.getTips();
+        return "";
+    }
 };
 
 class ImageAnnotation {
@@ -130,8 +133,9 @@ public:
         blocks.last().onPendingPoint(p);
     }
 
-    void onEndPoint(QPointF p) {
-        blocks.last().onEndPoint(p);
+    // 返回值是本次鼠标点击操作是否重要，若重要则加入history
+    bool onEndPoint(QPointF p) {
+        return blocks.last().onEndPoint(p);
     }
 
     void onSwitchTool() {
@@ -180,6 +184,10 @@ public:
             v += block.getCharacterAnnotation();
         }
         return v;
+    }
+
+    QString getTips() const {
+        return blocks.last().getTips();
     }
 };
 

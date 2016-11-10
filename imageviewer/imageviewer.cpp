@@ -1,4 +1,5 @@
 #include <QtWidgets>
+#include <QDebug>
 #include "imageviewer.h"
 
 ImageViewer::ImageViewer(QWidget *parent)
@@ -8,6 +9,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     createMenus();
 
     centralWidget = new QWidget(this);
+    statusLabel = new QLabel(this);
     resetHistory();
     image = new QImage;
     scaledImage = new QImage;
@@ -20,6 +22,10 @@ ImageViewer::ImageViewer(QWidget *parent)
 
     setWindowTitle(tr("Image Viewer"));
     setCentralWidget(centralWidget);
+    statusBar()->addWidget(statusLabel);
+    statusBar()->setStyleSheet(QString("QStatusBar::item{border: 0px;background:#ffd;}"));
+    centralWidget->setMouseTracking(true);
+    this->setMouseTracking(true);
     resize(1000, 800);
 }
 
@@ -79,6 +85,9 @@ void ImageViewer::paintEvent(QPaintEvent *) {
         painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
     }
 
+    // 绘制Tips
+    statusLabel->setText(anno.getTips());
+
     painter.end();
 }
 
@@ -126,39 +135,41 @@ void ImageViewer::wheelEvent(QWheelEvent *event) {
 void ImageViewer::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
         mousePressed = true;
-        if (controlPressed)
+        if (controlPressed) {
             draggingImage = true;
-        else
+        } else {
             drawingLabel = true;
+            anno.onStartPoint(toImageUV(event->pos()));
+            update();
+        }
         mouseLastPos = event->pos();
-    }
-    if (drawingLabel) {
-        anno.onStartPoint(toImageUV(event->pos()));
-        update();
     }
 }
 
 void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
     if (draggingImage) {
         setLocation(imageLeftTop + event->pos() - mouseLastPos);
-    }
-    mouseLastPos = event->pos();
-    if (drawingLabel) {
+    } else {
         anno.onPendingPoint(toImageUV(event->pos()));
         update();
     }
+    mouseLastPos = event->pos();
 }
 
 void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
-    if (drawingLabel) {
-        anno.onEndPoint(toImageUV(event->pos()));
-        addHistoryPoint();
-        update();
-    }
     if (event->button() == Qt::LeftButton) {
-        mousePressed = false;
-        draggingImage = false;
-        drawingLabel = false;
+        if (draggingImage) {
+            // do nothing
+        } else {
+            bool weak = anno.onEndPoint(toImageUV(event->pos()));
+            addHistoryPoint(weak);
+            update();
+        }
+        if (event->button() == Qt::LeftButton) {
+            mousePressed = false;
+            draggingImage = false;
+            drawingLabel = false;
+        }
     }
 }
 
@@ -229,9 +240,16 @@ void ImageViewer::resetHistory() {
     history.clear();
     anno = ImageAnnotation();
     history.push_back(anno);
+    keepHistoryOnUndo = false;
 }
 
-void ImageViewer::addHistoryPoint() {
+void ImageViewer::addHistoryPoint(bool weak) {
+    if (weak) {
+        keepHistoryOnUndo = true;
+        return;
+    } else {
+        keepHistoryOnUndo = false;
+    }
     redoHistory.clear();
     history.append(anno);
 }
@@ -263,11 +281,18 @@ void ImageViewer::open() {
 void ImageViewer::undo() {
     if (drawingLabel)
         return;
+    if (keepHistoryOnUndo) {
+        anno = history.back();
+        keepHistoryOnUndo = false;
+        update();
+        return;
+    }
     if (history.size() <= 1)
         return;
     redoHistory.push_back(history.back());
     history.pop_back();
     anno = history.back();
+    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())));
     update();
 }
 
@@ -279,12 +304,12 @@ void ImageViewer::redo() {
     history.push_back(redoHistory.back());
     redoHistory.pop_back();
     anno = history.back();
+    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())));
     update();
 }
 
 void ImageViewer::switchTool() {
     anno.onSwitchTool();
-    addHistoryPoint();
     update();
 }
 

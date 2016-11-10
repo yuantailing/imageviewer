@@ -1,156 +1,174 @@
 #include <QDebug>
 #include "imageannotation.h"
 
-void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *) {
+/// Perspective Helper
+
+PerspectiveHelper::PerspectiveHelper() {
+    numPoint = 0;
+    toolSwitched = false;
+    stroking = false;
+    textDirection = DIRECTION_AUTO;
+}
+
+void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *block) {
     if (numPoint == 0) {
         base.setP1(p);
+        base.setP2(p);
+        top.setP1(p);
+        top.setP2(p);
+        numPoint++;
+    } else if (numPoint == 1) {
         base.setP2(p);
         numPoint++;
     } else if (numPoint == 2) {
         top.setP1(p);
         top.setP2(p);
         numPoint++;
+    } else if (numPoint == 3) {
+        top.setP2(p);
+        numPoint++;
     } else {
         Q_ASSERT(numPoint == 4);
-        stroking = true;
-        stroke.setP1(p);
-        stroke.setP2(p);
+        if (stroking == false) {
+            stroking = true;
+            stroke.setP1(p);
+            stroke.setP2(p);
+        } else {
+            stroke.setP2(p);
+            if (textDirection == DIRECTION_AUTO)
+                textDirection = detectTextDirection(stroke);
+            QVector<QPolygonF> characterPoly = getPendingCharacterPoly();
+            if (!characterPoly.empty()) {
+                CharacterAnnotation charAnno;
+                charAnno.box = characterPoly.first();
+                charAnno.text = QString("");
+                block->characters.push_back(charAnno);
+            }
+            stroking = false;
+        }
     }
 }
 
 void PerspectiveHelper::onPendingPoint(QPointF p, BlockAnnotation *) {
     if (numPoint == 1) {
         base.setP2(p);
+    } else if (numPoint == 2) {
+        top.setP1(p);
+        top.setP2(p);
     } else if (numPoint == 3) {
         top.setP2(p);
     } else {
         Q_ASSERT(numPoint == 4);
         stroke.setP2(p);
-    }
-}
-
-void PerspectiveHelper::onEndPoint(QPointF p, BlockAnnotation *block) {
-    if (numPoint == 1) {
-        base.setP2(p);
-        numPoint++;
-    } else if (numPoint == 3) {
-        top.setP2(p);
-        numPoint++;
-    } else {
-        Q_ASSERT(numPoint == 4);
-        stroke.setP2(p);
-        QVector<QPolygonF> characterPoly = getPendingCharacterPoly();
-        if (!characterPoly.empty()) {
-            CharacterAnnotation charAnno;
-            charAnno.box = characterPoly.first();
-            charAnno.text = QString("");
-            block->characters.push_back(charAnno);
-        }
-        stroking = false;
     }
 }
 
 void PerspectiveHelper::onSwitchTool(BlockAnnotation *block) {
-    isVerticalText = !isVerticalText;
+    toolSwitched = !toolSwitched;
     block->characters.clear();
 }
 
-QVector<QPolygonF> PerspectiveHelper::getHelperPoly() const {
-    QVector<QPolygonF> v;
-    if (numPoint > 0) {
-        QPolygonF poly;
-        poly.append(base.p1());
-        poly.append(base.p2());
-        if (numPoint > 2) {
-            if (isIntersect(QLineF(base.p1(), top.p1()), QLineF(base.p2(), top.p2()))) {
-                poly.append(top.p1());
-                poly.append(top.p2());
-            } else {
-                poly.append(top.p2());
-                poly.append(top.p1());
-            }
-        }
-        v.push_back(poly);
-    }
-    return v;
+QPolygonF PerspectiveHelper::poly() const {
+    QLineF left(base.p1(), top.p1());
+    QLineF right(base.p2(), top.p2());
+    QPointF intersect;
+    if (left.intersect(right, &intersect) == QLineF::BoundedIntersection)
+        return QPolygonF({base.p1(), base.p2(), top.p1(), top.p2()});
+    else
+        return QPolygonF({base.p1(), base.p2(), top.p2(), top.p1()});
 }
 
 QVector<QPolygonF> PerspectiveHelper::getPendingCharacterPoly() const {
-    QVector<QPolygonF> v;
-    auto lineInterpolation = [](QLineF line, qreal x) {
-        return line.p1().y() + (line.p2().y() - line.p1().y()) *
-                (x - line.p1().x()) / (line.p2().x() - line.p1().x());
-    };
-    if (stroking) {
-        if (isVerticalText) {
-            QPolygonF poly;
-            QPointF pf_temp;
-            QLineF left(base.p1(), top.p1());
-            QLineF right(base.p2(), top.p2());
-            if (left.intersect(right, &pf_temp) == QLineF::BoundedIntersection) {
-                left = QLineF(base.p1(), top.p2());
-                right = QLineF(base.p2(), top.p1());
-            }
-            QPointF intersectPoint;
-            QLineF::IntersectType intersectType = base.intersect(top, &intersectPoint);
-            QLineF l1, l2;
-            if (intersectType == QLineF::BoundedIntersection || intersectType == QLineF::UnboundedIntersection) {
-                l1 = QLineF(intersectPoint, stroke.p1());
-                l2 = QLineF(intersectPoint, stroke.p2());
-            } else {
-                QPointF delta = right.p1() - left.p1() + right.p2() - left.p2();
-                l1 = QLineF(stroke.p1(), stroke.p1() + delta);
-                l2 = QLineF(stroke.p2(), stroke.p2() + delta);
-            }
-            QPointF p1, p2, p3, p4;
-            l1.intersect(left, &p1);
-            l1.intersect(right, &p2);
-            l2.intersect(right, &p3);
-            l2.intersect(left, &p4);
-            poly.append(p1);
-            poly.append(p2);
-            poly.append(p3);
-            poly.append(p4);
-            v.push_back(poly);
+    if (!stroking)
+        return QVector<QPolygonF>();
+    QPolygonF bound = poly();
+    TextDirection textDirection = this->textDirection;
+    if (textDirection == DIRECTION_AUTO)
+        textDirection = detectTextDirection(stroke);
+    if (textDirection == DIRECTION_BY_BASE || textDirection == DIRECTION_TO_BASE) {
+        QLineF left, right;
+        if (textDirection == DIRECTION_BY_BASE) {
+            left = QLineF(bound[0], bound[3]);
+            right = QLineF(bound[1], bound[2]);
         } else {
-            if (base.p1().x() != base.p2().x() && top.p1().x() != top.p2().x()) {
-                QPolygonF poly;
-                qreal x1 = qMin(stroke.p1().x(), stroke.p2().x());
-                qreal x2 = qMax(stroke.p1().x(), stroke.p2().x());
-                qreal y1b = lineInterpolation(base, x1);
-                qreal y1t = lineInterpolation(top, x1);
-                qreal y2b = lineInterpolation(base, x2);
-                qreal y2t = lineInterpolation(top, x2);
-                poly.append(QPointF(x1, y1b));
-                poly.append(QPointF(x2, y2b));
-                poly.append(QPointF(x2, y2t));
-                poly.append(QPointF(x1, y1t));
-                v.push_back(poly);
-            }
+            left = QLineF(bound[3], bound[2]);
+            right = QLineF(bound[0], bound[1]);
         }
+        QLineF bottom(left.p1(), right.p1()), up(left.p2(), right.p2());
+        if (!toolSwitched && isHorizontalText(stroke)) {
+            left.setP2(left.p1() + QPointF(0.0, 1.0));
+            right.setP2(right.p1() + QPointF(0.0, 1.0));
+        }
+        QPointF intersectPoint;
+        QLineF::IntersectType intersectType = left.intersect(right, &intersectPoint);
+        QLineF l1, l2;
+        if (intersectType == QLineF::BoundedIntersection || intersectType == QLineF::UnboundedIntersection) {
+            l1 = QLineF(intersectPoint, stroke.p1());
+            l2 = QLineF(intersectPoint, stroke.p2());
+        } else {
+            QPointF delta = left.p2() - left.p1() + right.p2() - right.p1();
+            l1 = QLineF(stroke.p1(), stroke.p1() + delta);
+            l2 = QLineF(stroke.p2(), stroke.p2() + delta);
+        }
+        QPointF p1, p2, p3, p4;
+        l1.intersect(bottom, &p1);
+        l2.intersect(bottom, &p2);
+        l2.intersect(up, &p3);
+        l1.intersect(up, &p4);
+        return {QPolygonF({p1, p2, p3, p4})};
     }
-    return v;
+    Q_ASSERT(false);
+    return QVector<QPolygonF>();
 }
 
-bool PerspectiveHelper::isIntersect(QLineF a, QLineF b) {
-    auto cross = [](QPointF a, QPointF b) {
-        return a.x() * b.y() - a.y() * b.x();
-    };
-    QPointF p12 = a.p2() - a.p1();
-    QPointF p34 = b.p2() - b.p1();
-    QPointF p31 = a.p1() - b.p1();
-    QPointF p13 = b.p1() - a.p1();
-    qreal c1 =  cross(p13, p34);
-    qreal c2 = cross(p12, p34);
-    qreal c3 = cross(p12, p31);
-    if (c2 < 0) {
-        c2 = -c2; c1 = -c1; c3 = -c3;
+QString PerspectiveHelper::getTips() const {
+    if (numPoint > 0 && numPoint < 4)
+        return QObject::tr("已绘制%1/%2个点").arg(numPoint).arg(4);
+    else if (numPoint == 4 && !toolSwitched &&
+             (textDirection == DIRECTION_BY_BASE || textDirection == DIRECTION_TO_BASE || stroking)) {
+        if (isHorizontalText(stroke))
+            return QObject::tr("横排文字自动锁定竖直边，按Tab可解除锁定");
     }
-    if (c2 != 0 && c1 >= 0 && c1 <= c2 && c3 >= 0 && c3 <= c2)
-        return true;
-    else
-        return false;
+    return QString("");
 }
+
+PerspectiveHelper::TextDirection PerspectiveHelper::detectTextDirection(QLineF stroke) const {
+    QPolygonF bound = poly();
+    QLineF horiDir = QLineF((bound[0] + bound[3]) / 2, (bound[1] + bound[2]) / 2).unitVector();
+    QLineF vertDir = QLineF((bound[0] + bound[1]) / 2, (bound[2] + bound[3]) / 2).unitVector();
+    if (qAbs(stroke.dx() * horiDir.dx() + stroke.dy() * horiDir.dy()) * 1.2 >=
+            qAbs(stroke.dx() * vertDir.dx() + stroke.dy() * vertDir.dy()))
+        return DIRECTION_BY_BASE;
+    else
+        return DIRECTION_TO_BASE;
+}
+
+bool PerspectiveHelper::isHorizontalText(QLineF stroke) const {
+    if (numPoint < 4)
+        return false;
+    QPolygonF bound = poly();
+    TextDirection textDirection = this->textDirection;
+    if (textDirection == DIRECTION_AUTO)
+        textDirection = detectTextDirection(stroke);
+    if (textDirection == DIRECTION_BY_BASE || textDirection == DIRECTION_TO_BASE) {
+        QLineF left, right;
+        if (textDirection == DIRECTION_BY_BASE) {
+            left = QLineF(bound[0], bound[3]);
+            right = QLineF(bound[1], bound[2]);
+        } else {
+            left = QLineF(bound[3], bound[2]);
+            right = QLineF(bound[0], bound[1]);
+        }
+        if (qMax(qAbs(left.unitVector().dx()), qAbs(right.unitVector().dx())) < 0.3)
+            return true;
+        else
+            return false;
+    }
+    Q_ASSERT(false);
+    return false;
+}
+
+/// Block Annotation
 
 bool BlockAnnotation::isStringOk() const {
     foreach (CharacterAnnotation const &charAnno, characters)
