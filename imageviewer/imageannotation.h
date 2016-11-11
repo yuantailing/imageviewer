@@ -21,11 +21,12 @@ public:
 
 class PerspectiveHelper {
 public:
-    int numPoint;      // 已确定的点数
-    QLineF base;       // 用户输入的第一条线
-    QLineF top;        // 用户输入的第二条线
-    bool toolSwitched; // false：横排文字垂直锁定 true：解除垂直锁定
-    bool stroking;     // 是否正在标注文字区域
+    int numPoint;         // 已确定的点数
+    QLineF base;          // 用户输入的第一条线
+    QLineF top;           // 用户输入的第二条线
+    bool toolSwitched;    // false：横排文字垂直锁定 true：解除垂直锁定
+    bool stroking;        // 是否正在标注文字区域
+    bool singleCharacter; // 是否每次只标注一个字
     QLineF stroke;
     // 自动检测框选文字方向是否与base同向 / 强制与base同向 / 强制与base垂直
     enum TextDirection { DIRECTION_AUTO, DIRECTION_BY_BASE, DIRECTION_TO_BASE } textDirection;
@@ -36,14 +37,16 @@ public:
     void onPendingPoint(QPointF p, BlockAnnotation *block);
     bool onEndPoint(QPointF, BlockAnnotation *) { return stroking; }
     void onSwitchTool(BlockAnnotation *block);
-    QPolygonF poly() const;
+    bool onEnterPressed(BlockAnnotation *block);
     QVector<QPolygonF> getHelperPoly() const { return QVector<QPolygonF>({poly()}); }
     QVector<QPolygonF> getPendingCharacterPoly() const;
     QString getTips() const;
 
 private:
+    QPolygonF poly() const;
     TextDirection detectTextDirection(QLineF stroke) const;
     bool isHorizontalText(QLineF stroke) const;
+    void makePolyToCharacterBox(BlockAnnotation *block);
 };
 
 class BlockAnnotation {
@@ -79,6 +82,12 @@ public:
             perspectiveHelper.onSwitchTool(this);
     }
 
+    bool onEnterPressed() {
+        if (helperType == PERSPECTIVE_HELPER)
+            return perspectiveHelper.onEnterPressed(this);
+        return false;
+    }
+
     int numWordNeeded() const {
         return characters.size();
     }
@@ -86,8 +95,6 @@ public:
     bool isStringOk() const;
 
     void onInputString(QString const &s);
-
-    void onEnterPressed();
 
     QVector<QPolygonF> getHelperPoly() const {
         if (helperType == PERSPECTIVE_HELPER)
@@ -133,13 +140,18 @@ public:
         blocks.last().onPendingPoint(p);
     }
 
-    // 返回值是本次鼠标点击操作是否重要，若重要则加入history
+    // 返回值是本次鼠标点击操作是否是weak history，弱历史会被之后的历史覆盖
     bool onEndPoint(QPointF p) {
         return blocks.last().onEndPoint(p);
     }
 
     void onSwitchTool() {
         blocks.last().onSwitchTool();
+    }
+
+    // 返回值是本次操作是否对标注类有实质修改，若没有实质修改则视为用户想要开始输入字符串
+    bool onEnterPressed() {
+        return blocks.last().onEnterPressed();
     }
 
     int numWordNeeded() const {
@@ -152,10 +164,6 @@ public:
 
     void onInputString(QString const &s) {
         blocks.last().onInputString(s);
-    }
-
-    void onEnterPressed() {
-        blocks.last().onEnterPressed();
     }
 
     void onNewBlock() {

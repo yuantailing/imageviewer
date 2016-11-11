@@ -95,23 +95,25 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control)
         controlPressed = true;
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-        int wordNeeded = anno.numWordNeeded();
-        if (wordNeeded == 0) {
-            anno.onEnterPressed();
+        bool annoChanged = anno.onEnterPressed();
+        if (annoChanged) {
+            addHistoryPoint();
             update();
-            wordNeeded = anno.numWordNeeded();
-        }
-        if (wordNeeded > 0) {
-            bool ok;
-            QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字").arg(wordNeeded), QLineEdit::Normal, QString::null, &ok);
-            if (ok) {
-                anno.onInputString(text);
-                update();
-                if (anno.isStringOk())
-                    anno.onNewBlock();
-                else
-                    QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足"));
-                addHistoryPoint();
+        } else {
+            int wordNeeded = anno.numWordNeeded();
+            if (wordNeeded > 0) {
+                bool ok;
+                QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字").arg(wordNeeded), QLineEdit::Normal, QString::null, &ok);
+                if (ok && text.length() > 0) {
+                    anno.onInputString(text);
+                    update();
+                    if (anno.isStringOk())
+                        anno.onNewBlock();
+                    else
+                        QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足"));
+                    addHistoryPoint();
+                    update();
+                }
             }
         }
     }

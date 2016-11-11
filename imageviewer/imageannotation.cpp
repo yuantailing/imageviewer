@@ -7,6 +7,7 @@ PerspectiveHelper::PerspectiveHelper() {
     numPoint = 0;
     toolSwitched = false;
     stroking = false;
+    singleCharacter = false;
     textDirection = DIRECTION_AUTO;
 }
 
@@ -27,6 +28,10 @@ void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *block) {
     } else if (numPoint == 3) {
         top.setP2(p);
         numPoint++;
+        if (singleCharacter) {
+            makePolyToCharacterBox(block);
+            numPoint = 0;
+        }
     } else {
         Q_ASSERT(numPoint == 4);
         if (stroking == false) {
@@ -68,14 +73,12 @@ void PerspectiveHelper::onSwitchTool(BlockAnnotation *block) {
     block->characters.clear();
 }
 
-QPolygonF PerspectiveHelper::poly() const {
-    QLineF left(base.p1(), top.p1());
-    QLineF right(base.p2(), top.p2());
-    QPointF intersect;
-    if (left.intersect(right, &intersect) == QLineF::BoundedIntersection)
-        return QPolygonF({base.p1(), base.p2(), top.p1(), top.p2()});
-    else
-        return QPolygonF({base.p1(), base.p2(), top.p2(), top.p1()});
+bool PerspectiveHelper::onEnterPressed(BlockAnnotation *block) {
+    if (numPoint < 4 || block->characters.size() > 0)
+        return false;
+    singleCharacter = true;
+    makePolyToCharacterBox(block);
+    return true;
 }
 
 QVector<QPolygonF> PerspectiveHelper::getPendingCharacterPoly() const {
@@ -132,6 +135,16 @@ QString PerspectiveHelper::getTips() const {
     return QString("");
 }
 
+QPolygonF PerspectiveHelper::poly() const {
+    QLineF left(base.p1(), top.p1());
+    QLineF right(base.p2(), top.p2());
+    QPointF intersect;
+    if (left.intersect(right, &intersect) == QLineF::BoundedIntersection)
+        return QPolygonF({base.p1(), base.p2(), top.p1(), top.p2()});
+    else
+        return QPolygonF({base.p1(), base.p2(), top.p2(), top.p1()});
+}
+
 PerspectiveHelper::TextDirection PerspectiveHelper::detectTextDirection(QLineF stroke) const {
     QPolygonF bound = poly();
     QLineF horiDir = QLineF((bound[0] + bound[3]) / 2, (bound[1] + bound[2]) / 2).unitVector();
@@ -168,6 +181,14 @@ bool PerspectiveHelper::isHorizontalText(QLineF stroke) const {
     return false;
 }
 
+void PerspectiveHelper::makePolyToCharacterBox(BlockAnnotation *block) {
+    CharacterAnnotation charAnno;
+    charAnno.box = poly();
+    charAnno.text = QString("");
+    block->characters.push_back(charAnno);
+    numPoint = 0;
+}
+
 /// Block Annotation
 
 bool BlockAnnotation::isStringOk() const {
@@ -183,15 +204,4 @@ void BlockAnnotation::onInputString(QString const &s) {
     int n = qMin(trimed.length(), characters.size());
     for (int i = 0; i < n; i++)
         characters[i].text = trimed.mid(i, 1);
-}
-
-void BlockAnnotation::onEnterPressed() {
-    foreach (QPolygonF const &poly, getHelperPoly()) {
-        if (poly.size() <= 2)
-            continue;
-        CharacterAnnotation charAnno;
-        charAnno.box = poly;
-        charAnno.text = QString("");
-        characters.push_back(charAnno);
-    }
 }
