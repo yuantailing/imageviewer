@@ -5,6 +5,7 @@
 
 PerspectiveHelper::PerspectiveHelper() {
     numPoint = 0;
+    stroke = QLineF(QPointF(0, 0), QPointF(0, 0));
     toolSwitched = false;
     stroking = false;
     singleCharacter = false;
@@ -29,7 +30,7 @@ void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *block) {
         top.setP2(p);
         numPoint++;
         if (singleCharacter) {
-            makePolyToCharacterBox(block);
+            addNewCharacterBoxToBlock(poly(), block);
             numPoint = 0;
         }
     } else {
@@ -43,12 +44,8 @@ void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *block) {
             if (textDirection == DIRECTION_AUTO)
                 textDirection = detectTextDirection(stroke);
             QVector<QPolygonF> characterPoly = getPendingCharacterPoly();
-            if (!characterPoly.empty()) {
-                CharacterAnnotation charAnno;
-                charAnno.box = characterPoly.first();
-                charAnno.text = QString("");
-                block->characters.push_back(charAnno);
-            }
+            if (!characterPoly.empty())
+                addNewCharacterBoxToBlock(characterPoly.first(), block);
             stroking = false;
         }
     }
@@ -64,7 +61,8 @@ void PerspectiveHelper::onPendingPoint(QPointF p, BlockAnnotation *) {
         top.setP2(p);
     } else {
         Q_ASSERT(numPoint == 4);
-        stroke.setP2(p);
+        if (stroking)
+            stroke.setP2(p);
     }
 }
 
@@ -74,11 +72,25 @@ void PerspectiveHelper::onSwitchTool(BlockAnnotation *block) {
 }
 
 bool PerspectiveHelper::onEnterPressed(BlockAnnotation *block) {
-    if (numPoint < 4 || block->characters.size() > 0)
+    if (numPoint < 4)
+        return false;
+    if (stroking) {
+        onStartPoint(stroke.p2(), block);
+        onEndPoint(stroke.p2(), block);
+    }
+    if (block->characters.size() > 0)
         return false;
     singleCharacter = true;
-    makePolyToCharacterBox(block);
+    addNewCharacterBoxToBlock(poly(), block);
+    numPoint = 0;
     return true;
+}
+
+QVector<QPolygonF> PerspectiveHelper::getHelperPoly() const {
+    if (numPoint > 0)
+        return QVector<QPolygonF>({poly()});
+    else
+        return QVector<QPolygonF>();
 }
 
 QVector<QPolygonF> PerspectiveHelper::getPendingCharacterPoly() const {
@@ -127,8 +139,7 @@ QVector<QPolygonF> PerspectiveHelper::getPendingCharacterPoly() const {
 QString PerspectiveHelper::getTips() const {
     if (numPoint > 0 && numPoint < 4)
         return QObject::tr("已绘制%1/%2个点").arg(numPoint).arg(4);
-    else if (numPoint == 4 && !toolSwitched &&
-             (textDirection == DIRECTION_BY_BASE || textDirection == DIRECTION_TO_BASE || stroking)) {
+    else if (numPoint == 4 && !toolSwitched) {
         if (isHorizontalText(stroke))
             return QObject::tr("横排文字自动锁定竖直边，按Tab可解除锁定");
     }
@@ -146,6 +157,8 @@ QPolygonF PerspectiveHelper::poly() const {
 }
 
 PerspectiveHelper::TextDirection PerspectiveHelper::detectTextDirection(QLineF stroke) const {
+    if (stroke.p1() == stroke.p2())
+        stroke.setP2(stroke.p1() + QPointF(1, 0));
     QPolygonF bound = poly();
     QLineF horiDir = QLineF((bound[0] + bound[3]) / 2, (bound[1] + bound[2]) / 2).unitVector();
     QLineF vertDir = QLineF((bound[0] + bound[1]) / 2, (bound[2] + bound[3]) / 2).unitVector();
@@ -181,12 +194,11 @@ bool PerspectiveHelper::isHorizontalText(QLineF stroke) const {
     return false;
 }
 
-void PerspectiveHelper::makePolyToCharacterBox(BlockAnnotation *block) {
+void PerspectiveHelper::addNewCharacterBoxToBlock(QPolygonF poly, BlockAnnotation *block) {
     CharacterAnnotation charAnno;
-    charAnno.box = poly();
+    charAnno.box = poly;
     charAnno.text = QString("");
     block->characters.push_back(charAnno);
-    numPoint = 0;
 }
 
 /// Block Annotation

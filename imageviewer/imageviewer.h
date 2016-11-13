@@ -2,11 +2,13 @@
 #define IMAGEVIEWER_H
 
 #include <QMainWindow>
+#include <QListWidget>
 #include "imageannotation.h"
 
 QT_BEGIN_NAMESPACE
 class QAction;
 class QMenu;
+class QListWidget;
 class QLabel;
 class QImage;
 QT_END_NAMESPACE
@@ -20,6 +22,7 @@ public:
     ~ImageViewer();
 
 protected:
+    void resizeEvent(QResizeEvent *);
     void paintEvent(QPaintEvent *);
     void keyPressEvent(QKeyEvent *);
     void keyReleaseEvent(QKeyEvent *);
@@ -35,24 +38,29 @@ private:
     void updateScaledImage();
     void resetHistory();
     void addHistoryPoint(bool weak = false);
-    QPointF toImageUV(QPoint screenUV);
-    QPoint toScreenUV(QPointF imageUV);
+    void updateBlockList();
+    QPointF toImageUV(QPoint screenUV) const;
+    QPointF toScreenUV(QPointF imageUV) const;
+    QPolygonF toScreenPoly(QPolygonF const &poly) const;
 
 private slots:
     void open();
     void undo();
     void redo();
     void switchTool();
+    void deleteBlock();
     void zoomIn();
     void zoomOut();
     void setLocation(QPoint loc);
     void resetLocation();
+    void onListWidgetSelect();
 
 private:
     QAction *openAct;
     QAction *undoAct;
     QAction *redoAct;
     QAction *switchToolAct;
+    QAction *deleteBlockAct;
     QAction *zoomInAct;
     QAction *zoomOutAct;
     QAction *resetLocationAct;
@@ -68,6 +76,7 @@ private:
     bool drawingLabel;
 
     QWidget *centralWidget;
+    QListWidget *listWidget;
     QLabel* statusLabel;
     QImage *image;
     QImage *scaledImage;
@@ -78,6 +87,16 @@ private:
     QVector<ImageAnnotation> history;
     QVector<ImageAnnotation> redoHistory;
     bool keepHistoryOnUndo;
+};
+
+class QSoftSelectListWidget: public QListWidget {
+    Q_OBJECT
+public:
+    QSoftSelectListWidget(QWidget *parent);
+    ~QSoftSelectListWidget();
+protected:
+    void mouseMoveEvent(QMouseEvent *);
+    void leaveEvent(QEvent *);
 };
 
 #endif // IMAGEVIEWER_H

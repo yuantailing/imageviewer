@@ -9,7 +9,12 @@ ImageViewer::ImageViewer(QWidget *parent)
     createMenus();
 
     centralWidget = new QWidget(this);
+    listWidget = new QSoftSelectListWidget(centralWidget);
     statusLabel = new QLabel(this);
+    statusBar()->addWidget(statusLabel);
+    statusBar()->setStyleSheet(QString("QStatusBar::item{border: 0px;background:#ffd;}"));
+    connect(listWidget, SIGNAL(currentRowChanged(int)), this, SLOT(onListWidgetSelect()));
+
     resetHistory();
     image = new QImage;
     scaledImage = new QImage;
@@ -22,10 +27,8 @@ ImageViewer::ImageViewer(QWidget *parent)
 
     setWindowTitle(tr("Image Viewer"));
     setCentralWidget(centralWidget);
-    statusBar()->addWidget(statusLabel);
-    statusBar()->setStyleSheet(QString("QStatusBar::item{border: 0px;background:#ffd;}"));
-    centralWidget->setMouseTracking(true);
     this->setMouseTracking(true);
+    centralWidget->setMouseTracking(true);
     resize(1000, 800);
 }
 
@@ -34,61 +37,76 @@ ImageViewer::~ImageViewer() {
     delete scaledImage;
 }
 
-void ImageViewer::paintEvent(QPaintEvent *) {
+void ImageViewer::resizeEvent(QResizeEvent *event) {
+    int w = 160;
+    int x1 = width() - w - 20;
+    int y1 = 50;
+    int h = qMin(320, (height() - y1 - 60));
+    x1 = qMax(x1, 0);
+    h = qMax(h, 30);
+    listWidget->setGeometry(x1, y1, w, h);
+    QMainWindow::resizeEvent(event);
+}
+
+void ImageViewer::paintEvent(QPaintEvent *event) {
     QPainter painter;
     painter.begin(this);
+
     // 绘制图片
     painter.drawImage(imageLeftTop, *scaledImage);
 
-    // 绘制辅助图层
-    painter.setOpacity(0.3);
-    painter.setPen(QPen(Qt::blue, 3.0));
-    painter.setBrush(QBrush(Qt::yellow));
-    QVector<QPolygonF> helperPoly = anno.getHelperPoly();
-    foreach (QPolygonF const &polyImage, helperPoly) {
-        QPolygonF polyScreen;
-        foreach (QPointF p, polyImage)
-            polyScreen.append(toScreenUV(p));
-        painter.drawPolygon(polyScreen);
-    }
+    // 确定选中的Block
+    int selectedBlock = -1;
+    if (!listWidget->selectedItems().isEmpty())
+        selectedBlock = listWidget->row(listWidget->selectedItems().first());
 
-    // 绘制正在标注的字符
-    painter.setOpacity(0.3);
-    painter.setPen(QPen(Qt::green));
-    painter.setBrush(QBrush(Qt::red));
-    QVector<QPolygonF> pendingCharacterPoly = anno.getPendingCharacterPoly();
-    foreach (QPolygonF const &polyImage, pendingCharacterPoly) {
-        QPolygonF polyScreen;
-        foreach (QPointF p, polyImage)
-            polyScreen.append(toScreenUV(p));
-        painter.drawPolygon(polyScreen);
-    }
+    for (int i = 0; i < anno.blocks.size(); i++) {
+        BlockAnnotation const &block(anno.blocks[i]);
+        qreal polyOpacity = i == selectedBlock ? 0.5 : 0.3;
+        qreal charOpacity = i == selectedBlock ? 1.0 : 0.75;
 
-    // 绘制字符区域
-    QVector<CharacterAnnotation> charAnnoVec = anno.getCharacterAnnotation();
-    foreach (CharacterAnnotation const &charAnno, charAnnoVec) {
-        QPolygonF polyScreen;
-        foreach (QPointF p, charAnno.box)
-            polyScreen.append(toScreenUV(p));
+        // 绘制辅助图层
+        painter.setOpacity(polyOpacity);
+        painter.setPen(QPen(Qt::blue, 3.0));
+        painter.setBrush(QBrush(Qt::yellow));
+        foreach (QPolygonF const &poly, block.getHelperPoly())
+            painter.drawPolygon(toScreenPoly(poly));
 
-        painter.setOpacity(0.3);
+        // 绘制正在标注的字符区域
+        painter.setOpacity(polyOpacity);
         painter.setPen(QPen(Qt::green));
         painter.setBrush(QBrush(Qt::red));
-        painter.drawPolygon(polyScreen);
+        foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
+            painter.drawPolygon(toScreenPoly(poly));
 
-        painter.setOpacity(0.8);
-        painter.setPen(QPen(Qt::black));
-        painter.setBrush(QBrush(Qt::red));
-        QRectF bounding = polyScreen.boundingRect();
-        qreal fontSize = qMax(qMin(bounding.width(), bounding.height()) * 0.67, 5.0);
-        painter.setFont(QFont("Arial", fontSize, QFont::Bold));
-        painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
+        // 绘制已标注的字符区域
+        foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
+            QPolygonF polyScreen;
+            foreach (QPointF p, charAnno.box)
+                polyScreen.append(toScreenUV(p));
+
+            // 字符包围盒
+            painter.setOpacity(polyOpacity);
+            painter.setPen(QPen(Qt::green));
+            painter.setBrush(QBrush(Qt::red));
+            painter.drawPolygon(polyScreen);
+
+            // 打印文字
+            painter.setOpacity(charOpacity);
+            painter.setPen(QPen(Qt::black));
+            painter.setBrush(QBrush(Qt::red));
+            QRectF bounding = polyScreen.boundingRect();
+            qreal fontSize = qMax(qMin(bounding.width(), bounding.height()) * 0.67, 5.0);
+            painter.setFont(QFont("Arial", fontSize, QFont::Bold));
+            painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
+        }
     }
 
     // 绘制Tips
     statusLabel->setText(anno.getTips());
 
     painter.end();
+    QMainWindow::paintEvent(event);
 }
 
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
@@ -112,16 +130,19 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
                     else
                         QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足"));
                     addHistoryPoint();
+                    updateBlockList();
                     update();
                 }
             }
         }
     }
+    QMainWindow::keyPressEvent(event);
 }
 
 void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control)
         controlPressed = false;
+    QMainWindow::keyReleaseEvent(event);
 }
 
 void ImageViewer::wheelEvent(QWheelEvent *event) {
@@ -132,6 +153,7 @@ void ImageViewer::wheelEvent(QWheelEvent *event) {
             zoomOut();
         }
     }
+    QMainWindow::wheelEvent(event);
 }
 
 void ImageViewer::mousePressEvent(QMouseEvent *event) {
@@ -146,6 +168,7 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
         }
         mouseLastPos = event->pos();
     }
+    QMainWindow::mousePressEvent(event);
 }
 
 void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
@@ -156,6 +179,7 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
         update();
     }
     mouseLastPos = event->pos();
+    QMainWindow::mouseMoveEvent(event);
 }
 
 void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
@@ -173,6 +197,7 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
             drawingLabel = false;
         }
     }
+    QMainWindow::mouseReleaseEvent(event);
 }
 
 void ImageViewer::createActions() {
@@ -191,6 +216,10 @@ void ImageViewer::createActions() {
     switchToolAct = new QAction(tr("&Switch tool"), this);
     switchToolAct->setShortcut(tr("Tab"));
     connect(switchToolAct, SIGNAL(triggered()), this, SLOT(switchTool()));
+
+    deleteBlockAct = new QAction(tr("&Delete block"), this);
+    deleteBlockAct->setShortcut(tr("Delete"));
+    connect(deleteBlockAct, SIGNAL(triggered()), this, SLOT(deleteBlock()));
 
     zoomInAct = new QAction(tr("Zoom &In (25%)"), this);
     zoomInAct->setShortcuts({tr("Ctrl++"), tr("Ctrl+=")});
@@ -213,6 +242,7 @@ void ImageViewer::createMenus() {
     editMenu->addAction(undoAct);
     editMenu->addAction(redoAct);
     editMenu->addAction(switchToolAct);
+    editMenu->addAction(deleteBlockAct);
 
     viewMenu = new QMenu(tr("&View"), this);
     viewMenu->addAction(zoomInAct);
@@ -241,6 +271,8 @@ void ImageViewer::resetHistory() {
     redoHistory.clear();
     history.clear();
     anno = ImageAnnotation();
+    anno.onNewBlock();
+    updateBlockList();
     history.push_back(anno);
     keepHistoryOnUndo = false;
 }
@@ -256,14 +288,34 @@ void ImageViewer::addHistoryPoint(bool weak) {
     history.append(anno);
 }
 
-QPointF ImageViewer::toImageUV(QPoint screenUV) {
+void ImageViewer::updateBlockList() {
+    listWidget->clear();
+    for (int i = 0; i < anno.blocks.size(); i++) {
+        BlockAnnotation const &block(anno.blocks[i]);
+        QString text("");
+        foreach (CharacterAnnotation const &charAnno, block.characters)
+            text += charAnno.text;
+        if (text.isEmpty())
+            text = tr("<no characters>");
+        listWidget->addItem(tr("%1. %2").arg(i + 1).arg(text));
+    }
+}
+
+QPointF ImageViewer::toImageUV(QPoint screenUV) const {
     QPoint delta = screenUV - imageLeftTop;
     return QPointF(delta.x() / scaleFactor, delta.y() / scaleFactor);
 }
 
-QPoint ImageViewer::toScreenUV(QPointF imageUV) {
+QPointF ImageViewer::toScreenUV(QPointF imageUV) const {
     QPoint delta(qRound(imageUV.x() * scaleFactor), qRound(imageUV.y() * scaleFactor));
     return imageLeftTop + delta;
+}
+
+QPolygonF ImageViewer::toScreenPoly(QPolygonF const &poly) const {
+    QPolygonF res;
+    foreach (QPointF const &p, poly)
+        res.append(toScreenUV(p));
+    return res;
 }
 
 void ImageViewer::open() {
@@ -295,6 +347,7 @@ void ImageViewer::undo() {
     history.pop_back();
     anno = history.back();
     anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())));
+    updateBlockList();
     update();
 }
 
@@ -307,12 +360,28 @@ void ImageViewer::redo() {
     redoHistory.pop_back();
     anno = history.back();
     anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())));
+    updateBlockList();
     update();
 }
 
 void ImageViewer::switchTool() {
     anno.onSwitchTool();
+    addHistoryPoint(true);
     update();
+}
+
+void ImageViewer::deleteBlock() {
+    if (!listWidget->selectedItems().isEmpty()) {
+        int selectedBlock = listWidget->row(listWidget->selectedItems().first());
+        if (selectedBlock >= 0 && selectedBlock < anno.blocks.size()) {
+            if (selectedBlock == anno.blocks.size() - 1)
+                anno.onNewBlock();
+            anno.blocks.remove(selectedBlock);
+            addHistoryPoint();
+            updateBlockList();
+            update();
+        }
+    }
 }
 
 void ImageViewer::zoomIn() {
@@ -347,4 +416,25 @@ void ImageViewer::resetLocation() {
     updateScaledImage();
     setLocation(QPoint(0, 0));
     update();
+}
+
+void ImageViewer::onListWidgetSelect() {
+    update();
+}
+
+QSoftSelectListWidget::QSoftSelectListWidget(QWidget *parent): QListWidget(parent) {
+    setMouseTracking(true);
+}
+
+QSoftSelectListWidget::~QSoftSelectListWidget() { }
+
+void QSoftSelectListWidget::mouseMoveEvent(QMouseEvent *e) {
+    setCurrentRow(-1);
+    setCurrentItem(itemAt(mapFromGlobal(cursor().pos())));
+    QListWidget::mouseMoveEvent(e);
+}
+
+void QSoftSelectListWidget::leaveEvent(QEvent *e) {
+    clearSelection();
+    QListWidget::leaveEvent(e);
 }

@@ -24,10 +24,10 @@ public:
     int numPoint;         // 已确定的点数
     QLineF base;          // 用户输入的第一条线
     QLineF top;           // 用户输入的第二条线
+    QLineF stroke;
     bool toolSwitched;    // false：横排文字垂直锁定 true：解除垂直锁定
     bool stroking;        // 是否正在标注文字区域
     bool singleCharacter; // 是否每次只标注一个字
-    QLineF stroke;
     // 自动检测框选文字方向是否与base同向 / 强制与base同向 / 强制与base垂直
     enum TextDirection { DIRECTION_AUTO, DIRECTION_BY_BASE, DIRECTION_TO_BASE } textDirection;
 
@@ -38,7 +38,7 @@ public:
     bool onEndPoint(QPointF, BlockAnnotation *) { return stroking; }
     void onSwitchTool(BlockAnnotation *block);
     bool onEnterPressed(BlockAnnotation *block);
-    QVector<QPolygonF> getHelperPoly() const { return QVector<QPolygonF>({poly()}); }
+    QVector<QPolygonF> getHelperPoly() const;
     QVector<QPolygonF> getPendingCharacterPoly() const;
     QString getTips() const;
 
@@ -46,7 +46,7 @@ private:
     QPolygonF poly() const;
     TextDirection detectTextDirection(QLineF stroke) const;
     bool isHorizontalText(QLineF stroke) const;
-    void makePolyToCharacterBox(BlockAnnotation *block);
+    void addNewCharacterBoxToBlock(QPolygonF poly, BlockAnnotation *block);
 };
 
 class BlockAnnotation {
@@ -129,40 +129,47 @@ public:
     ImageAnnotation() {
         version = 1000;
         imageId = QString("");
-        onNewBlock();
     }
 
     void onStartPoint(QPointF p) {
+        Q_ASSERT(!blocks.isEmpty());
         blocks.last().onStartPoint(p);
     }
 
     void onPendingPoint(QPointF p) {
+        Q_ASSERT(!blocks.isEmpty());
         blocks.last().onPendingPoint(p);
     }
 
     // 返回值是本次鼠标点击操作是否是weak history，弱历史会被之后的历史覆盖
     bool onEndPoint(QPointF p) {
+        Q_ASSERT(!blocks.isEmpty());
         return blocks.last().onEndPoint(p);
     }
 
     void onSwitchTool() {
+        Q_ASSERT(!blocks.isEmpty());
         blocks.last().onSwitchTool();
     }
 
     // 返回值是本次操作是否对标注类有实质修改，若没有实质修改则视为用户想要开始输入字符串
     bool onEnterPressed() {
+        Q_ASSERT(!blocks.isEmpty());
         return blocks.last().onEnterPressed();
     }
 
     int numWordNeeded() const {
+        Q_ASSERT(!blocks.isEmpty());
         return blocks.last().numWordNeeded();
     }
 
     bool isStringOk() const {
+        Q_ASSERT(!blocks.isEmpty());
         return blocks.last().isStringOk();
     }
 
     void onInputString(QString const &s) {
+        Q_ASSERT(!blocks.isEmpty());
         blocks.last().onInputString(s);
     }
 
@@ -170,31 +177,8 @@ public:
         blocks.push_back(BlockAnnotation());
     }
 
-    QVector<QPolygonF> getHelperPoly() const {
-        QVector<QPolygonF> v;
-        foreach (BlockAnnotation const &block, blocks) {
-            v += block.getHelperPoly();
-        }
-        return v;
-    }
-
-    QVector<QPolygonF> getPendingCharacterPoly() const {
-        QVector<QPolygonF> v;
-        foreach (BlockAnnotation const &block, blocks) {
-            v += block.getPendingCharacterPoly();
-        }
-        return v;
-    }
-
-    QVector<CharacterAnnotation> getCharacterAnnotation() const {
-        QVector<CharacterAnnotation> v;
-        foreach (BlockAnnotation const &block, blocks) {
-            v += block.getCharacterAnnotation();
-        }
-        return v;
-    }
-
     QString getTips() const {
+        Q_ASSERT(!blocks.isEmpty());
         return blocks.last().getTips();
     }
 };
