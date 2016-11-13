@@ -22,8 +22,7 @@ public:
 class PerspectiveHelper {
 public:
     int numPoint;         // 已确定的点数
-    QLineF base;          // 用户输入的第一条线
-    QLineF top;           // 用户输入的第二条线
+    QPointF points[4];    // 保存用户确定的顶点
     QLineF stroke;
     bool toolSwitched;    // false：横排文字垂直锁定 true：解除垂直锁定
     bool stroking;        // 是否正在标注文字区域
@@ -33,9 +32,9 @@ public:
 
 public:
     PerspectiveHelper();
-    void onStartPoint(QPointF p, BlockAnnotation *block);
-    void onPendingPoint(QPointF p, BlockAnnotation *block);
-    bool onEndPoint(QPointF, BlockAnnotation *) { return stroking; }
+    void onStartPoint(QPointF p, bool regular, BlockAnnotation *block);
+    void onPendingPoint(QPointF p, bool regular, BlockAnnotation *block);
+    bool onEndPoint(QPointF, bool, BlockAnnotation *) { return stroking; }
     void onSwitchTool(BlockAnnotation *block);
     bool onEnterPressed(BlockAnnotation *block);
     QVector<QPolygonF> getHelperPoly() const;
@@ -61,19 +60,19 @@ public:
         helperType = PERSPECTIVE_HELPER;
     }
 
-    void onStartPoint(QPointF p) {
+    void onStartPoint(QPointF p, bool regular) {
         if (helperType == PERSPECTIVE_HELPER)
-            perspectiveHelper.onStartPoint(p, this);
+            perspectiveHelper.onStartPoint(p, regular, this);
     }
 
-    void onPendingPoint(QPointF p) {
+    void onPendingPoint(QPointF p, bool regular) {
         if (helperType == PERSPECTIVE_HELPER)
-            perspectiveHelper.onPendingPoint(p, this);
+            perspectiveHelper.onPendingPoint(p, regular, this);
     }
 
-    bool onEndPoint(QPointF p) {
+    bool onEndPoint(QPointF p, bool regular) {
         if (helperType == PERSPECTIVE_HELPER)
-            return perspectiveHelper.onEndPoint(p, this);
+            return perspectiveHelper.onEndPoint(p, regular, this);
         return false;
     }
 
@@ -131,20 +130,20 @@ public:
         imageId = QString("");
     }
 
-    void onStartPoint(QPointF p) {
+    void onStartPoint(QPointF p, bool regular) {
         Q_ASSERT(!blocks.isEmpty());
-        blocks.last().onStartPoint(p);
+        blocks.last().onStartPoint(p, regular);
     }
 
-    void onPendingPoint(QPointF p) {
+    void onPendingPoint(QPointF p, bool regular) {
         Q_ASSERT(!blocks.isEmpty());
-        blocks.last().onPendingPoint(p);
+        blocks.last().onPendingPoint(p, regular);
     }
 
     // 返回值是本次鼠标点击操作是否是weak history，弱历史会被之后的历史覆盖
-    bool onEndPoint(QPointF p) {
+    bool onEndPoint(QPointF p, bool regular) {
         Q_ASSERT(!blocks.isEmpty());
-        return blocks.last().onEndPoint(p);
+        return blocks.last().onEndPoint(p, regular);
     }
 
     void onSwitchTool() {

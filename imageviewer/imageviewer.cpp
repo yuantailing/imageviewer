@@ -20,6 +20,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     scaledImage = new QImage;
     applyImage(QImage("148.jpg"));           //! Test
     controlPressed = false;
+    shiftPressed = false;
     mousePressed = false;
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
@@ -40,8 +41,8 @@ ImageViewer::~ImageViewer() {
 void ImageViewer::resizeEvent(QResizeEvent *event) {
     int w = 160;
     int x1 = width() - w - 20;
-    int y1 = 50;
-    int h = qMin(320, (height() - y1 - 60));
+    int y1 = 20;
+    int h = qMin((int)(height() * 0.7), (height() - y1 - 60));
     x1 = qMax(x1, 0);
     h = qMax(h, 30);
     listWidget->setGeometry(x1, y1, w, h);
@@ -112,7 +113,11 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control)
         controlPressed = true;
-    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+    else if (event->key() == Qt::Key_Shift) {
+        shiftPressed = true;
+        anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
+        update();
+    } else if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         bool annoChanged = anno.onEnterPressed();
         if (annoChanged) {
             addHistoryPoint();
@@ -142,6 +147,11 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
 void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control)
         controlPressed = false;
+    else if (event->key() == Qt::Key_Shift) {
+        shiftPressed = false;
+        anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
+        update();
+    }
     QMainWindow::keyReleaseEvent(event);
 }
 
@@ -163,7 +173,7 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
             draggingImage = true;
         } else {
             drawingLabel = true;
-            anno.onStartPoint(toImageUV(event->pos()));
+            anno.onStartPoint(toImageUV(event->pos()), shiftPressed);
             update();
         }
         mouseLastPos = event->pos();
@@ -175,7 +185,7 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
     if (draggingImage) {
         setLocation(imageLeftTop + event->pos() - mouseLastPos);
     } else {
-        anno.onPendingPoint(toImageUV(event->pos()));
+        anno.onPendingPoint(toImageUV(event->pos()), shiftPressed);
         update();
     }
     mouseLastPos = event->pos();
@@ -187,8 +197,9 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
         if (draggingImage) {
             // do nothing
         } else {
-            bool weak = anno.onEndPoint(toImageUV(event->pos()));
+            bool weak = anno.onEndPoint(toImageUV(event->pos()), shiftPressed);
             addHistoryPoint(weak);
+            updateBlockList();
             update();
         }
         if (event->button() == Qt::LeftButton) {
@@ -293,10 +304,14 @@ void ImageViewer::updateBlockList() {
     for (int i = 0; i < anno.blocks.size(); i++) {
         BlockAnnotation const &block(anno.blocks[i]);
         QString text("");
-        foreach (CharacterAnnotation const &charAnno, block.characters)
-            text += charAnno.text;
+        foreach (CharacterAnnotation const &charAnno, block.characters) {
+            if (charAnno.text.isEmpty())
+                text += tr("-");
+            else
+                text += charAnno.text;
+        }
         if (text.isEmpty())
-            text = tr("<no characters>");
+            text = tr("<empty>");
         listWidget->addItem(tr("%1. %2").arg(i + 1).arg(text));
     }
 }
@@ -346,7 +361,7 @@ void ImageViewer::undo() {
     redoHistory.push_back(history.back());
     history.pop_back();
     anno = history.back();
-    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())));
+    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
     updateBlockList();
     update();
 }
@@ -359,7 +374,7 @@ void ImageViewer::redo() {
     history.push_back(redoHistory.back());
     redoHistory.pop_back();
     anno = history.back();
-    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())));
+    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
     updateBlockList();
     update();
 }
@@ -430,7 +445,7 @@ QSoftSelectListWidget::~QSoftSelectListWidget() { }
 
 void QSoftSelectListWidget::mouseMoveEvent(QMouseEvent *e) {
     setCurrentRow(-1);
-    setCurrentItem(itemAt(mapFromGlobal(cursor().pos())));
+    setCurrentItem(itemAt(e->pos()));
     QListWidget::mouseMoveEvent(e);
 }
 

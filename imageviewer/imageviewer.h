@@ -69,6 +69,7 @@ private:
     QMenu *viewMenu;
 
     bool controlPressed;
+    bool shiftPressed;
     bool mousePressed;
     QPoint mouseLastPos;
 

@@ -12,22 +12,31 @@ PerspectiveHelper::PerspectiveHelper() {
     textDirection = DIRECTION_AUTO;
 }
 
-void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *block) {
+void PerspectiveHelper::onStartPoint(QPointF p, bool regular, BlockAnnotation *block) {
     if (numPoint == 0) {
-        base.setP1(p);
-        base.setP2(p);
-        top.setP1(p);
-        top.setP2(p);
+        points[0] = points[1] = points[2] = points[3] = p;
         numPoint++;
     } else if (numPoint == 1) {
-        base.setP2(p);
-        numPoint++;
+        if (regular) {
+            points[3] = p;
+            points[1] = QPointF(points[3].x(), points[0].y());
+            points[2] = QPointF(points[0].x(), points[3].y());
+            numPoint += 3;
+        } else {
+            points[1] = points[2] = points[3] = p;
+            numPoint++;
+        }
     } else if (numPoint == 2) {
-        top.setP1(p);
-        top.setP2(p);
-        numPoint++;
+        if (regular) {
+            points[3] = p;
+            points[2] = points[3] - points[1] + points[0];
+            numPoint += 2;
+        } else {
+            points[2] = points[3] = p;
+            numPoint++;
+        }
     } else if (numPoint == 3) {
-        top.setP2(p);
+        points[3] = p;
         numPoint++;
         if (singleCharacter) {
             addNewCharacterBoxToBlock(poly(), block);
@@ -51,14 +60,11 @@ void PerspectiveHelper::onStartPoint(QPointF p, BlockAnnotation *block) {
     }
 }
 
-void PerspectiveHelper::onPendingPoint(QPointF p, BlockAnnotation *) {
-    if (numPoint == 1) {
-        base.setP2(p);
-    } else if (numPoint == 2) {
-        top.setP1(p);
-        top.setP2(p);
-    } else if (numPoint == 3) {
-        top.setP2(p);
+void PerspectiveHelper::onPendingPoint(QPointF p, bool regular, BlockAnnotation *block) {
+    if (numPoint < 4) {
+        int oldNum = numPoint;
+        onStartPoint(p, regular, block);
+        numPoint = oldNum;
     } else {
         Q_ASSERT(numPoint == 4);
         if (stroking)
@@ -75,8 +81,8 @@ bool PerspectiveHelper::onEnterPressed(BlockAnnotation *block) {
     if (numPoint < 4)
         return false;
     if (stroking) {
-        onStartPoint(stroke.p2(), block);
-        onEndPoint(stroke.p2(), block);
+        onStartPoint(stroke.p2(), false, block);
+        onEndPoint(stroke.p2(), false, block);
     }
     if (block->characters.size() > 0)
         return false;
@@ -137,23 +143,34 @@ QVector<QPolygonF> PerspectiveHelper::getPendingCharacterPoly() const {
 }
 
 QString PerspectiveHelper::getTips() const {
-    if (numPoint > 0 && numPoint < 4)
-        return QObject::tr("已绘制%1/%2个点").arg(numPoint).arg(4);
-    else if (numPoint == 4 && !toolSwitched) {
-        if (isHorizontalText(stroke))
-            return QObject::tr("横排文字自动锁定竖直边，按Tab可解除锁定");
+    QString tips("");
+    if (numPoint > 0 && numPoint < 4) {
+        tips +=  QObject::tr("已绘制%1/%2个点 ").arg(numPoint).arg(4);
+        if (numPoint == 1)
+            tips += QObject::tr("按住Shift添加矩形约束 ");
+        else if (numPoint == 2)
+            tips += QObject::tr("按住Shift添加平行四边形约束 ");
     }
-    return QString("");
+    if (numPoint == 4 && !toolSwitched) {
+        if (isHorizontalText(stroke))
+            tips += QObject::tr("横排文字自动锁定竖直边，按Tab可解除锁定 ");
+    }
+    return tips;
 }
 
 QPolygonF PerspectiveHelper::poly() const {
-    QLineF left(base.p1(), top.p1());
-    QLineF right(base.p2(), top.p2());
+    QLineF base(points[0], points[1]);
+    QLineF top(points[2], points[3]);
+    QLineF left(points[0], points[2]);
+    QLineF right(points[1], points[3]);
     QPointF intersect;
-    if (left.intersect(right, &intersect) == QLineF::BoundedIntersection)
-        return QPolygonF({base.p1(), base.p2(), top.p1(), top.p2()});
+    if (base.intersect(top, &intersect) == QLineF::BoundedIntersection)
+        return QPolygonF({points[0], points[2], points[1], points[3]});
+    else if (left.intersect(right, &intersect) == QLineF::BoundedIntersection)
+        return QPolygonF({points[0], points[1], points[2], points[3]});
     else
-        return QPolygonF({base.p1(), base.p2(), top.p2(), top.p1()});
+        return QPolygonF({points[0], points[1], points[3], points[2]});
+
 }
 
 PerspectiveHelper::TextDirection PerspectiveHelper::detectTextDirection(QLineF stroke) const {
