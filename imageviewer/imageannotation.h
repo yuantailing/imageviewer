@@ -50,10 +50,10 @@ private:
 
 class BlockAnnotation {
 public:
+    QVector<CharacterAnnotation> characters;
     enum HelperType {NO_HELPER, PERSPECTIVE_HELPER};
     HelperType helperType;
     PerspectiveHelper perspectiveHelper;
-    QVector<CharacterAnnotation> characters;
 
 public:
     BlockAnnotation() {
