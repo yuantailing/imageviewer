@@ -37,6 +37,7 @@ public:
     bool onEndPoint(QPointF, bool, BlockAnnotation *) { return stroking; }
     void onSwitchTool(BlockAnnotation *block);
     bool onEnterPressed(BlockAnnotation *block);
+    void setPoint(QPointF p, bool regular, BlockAnnotation *block, bool pending);
     QVector<QPolygonF> getHelperPoly() const;
     QVector<QPolygonF> getPendingCharacterPoly() const;
     QString getTips() const;

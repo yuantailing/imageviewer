@@ -36,6 +36,7 @@ private:
     void createMenus();
     void applyImage(QImage const &im);
     void updateScaledImage();
+    void resetLocation(QSize size);
     void resetHistory();
     void addHistoryPoint(bool weak = false);
     void updateBlockList();

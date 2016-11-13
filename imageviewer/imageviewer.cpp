@@ -9,6 +9,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     createMenus();
 
     centralWidget = new QWidget(this);
+    centralWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
     listWidget = new QSoftSelectListWidget(centralWidget);
     statusLabel = new QLabel(this);
     statusBar()->addWidget(statusLabel);
@@ -39,6 +40,7 @@ ImageViewer::~ImageViewer() {
 }
 
 void ImageViewer::resizeEvent(QResizeEvent *event) {
+    resetLocation(event->size());
     int w = 160;
     int x1 = width() - w - 20;
     int y1 = 20;
@@ -411,7 +413,7 @@ void ImageViewer::zoomIn() {
 }
 
 void ImageViewer::zoomOut() {
-    if (scaleFactor < 0.1)
+    if (scaleFactor < 0.2)
         return;
     QPoint mousePos = mapFromGlobal(cursor().pos());
     qreal oldFactor = scaleFactor;
@@ -427,9 +429,15 @@ void ImageViewer::setLocation(QPoint loc) {
 }
 
 void ImageViewer::resetLocation() {
-    scaleFactor = 0.4;
+    resetLocation(size());
+}
+
+void ImageViewer::resetLocation(QSize size) {
+    int w = size.width();
+    int h = size.height() - menuBar()->height();
+    scaleFactor = qMin((qreal)w / image->width(), (qreal)h / image->height());
     updateScaledImage();
-    setLocation(QPoint(0, 0));
+    setLocation(QPoint((w - scaledImage->width()) / 2, menuBar()->height() + (h - scaledImage->height()) / 2));
     update();
 }
 

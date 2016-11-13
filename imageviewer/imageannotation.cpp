@@ -13,62 +13,68 @@ PerspectiveHelper::PerspectiveHelper() {
 }
 
 void PerspectiveHelper::onStartPoint(QPointF p, bool regular, BlockAnnotation *block) {
+    setPoint(p, regular, block, false);
+}
+
+void PerspectiveHelper::onPendingPoint(QPointF p, bool regular, BlockAnnotation *block) {
+    setPoint(p, regular, block, true);
+}
+
+void PerspectiveHelper::setPoint(QPointF p, bool regular, BlockAnnotation *block, bool pending) {
     if (numPoint == 0) {
         points[0] = points[1] = points[2] = points[3] = p;
-        numPoint++;
+        if (!pending)
+            numPoint++;
     } else if (numPoint == 1) {
         if (regular) {
             points[3] = p;
             points[1] = QPointF(points[3].x(), points[0].y());
             points[2] = QPointF(points[0].x(), points[3].y());
-            numPoint += 3;
+            if (!pending)
+                numPoint += 3;
         } else {
             points[1] = points[2] = points[3] = p;
-            numPoint++;
+            if (!pending)
+                numPoint++;
         }
     } else if (numPoint == 2) {
         if (regular) {
             points[3] = p;
             points[2] = points[3] - points[1] + points[0];
-            numPoint += 2;
+            if (!pending)
+                numPoint += 2;
         } else {
             points[2] = points[3] = p;
-            numPoint++;
+            if (!pending)
+                numPoint++;
         }
     } else if (numPoint == 3) {
         points[3] = p;
-        numPoint++;
-        if (singleCharacter) {
-            addNewCharacterBoxToBlock(poly(), block);
-            numPoint = 0;
+        if (!pending) {
+            numPoint++;
+            if (singleCharacter) {
+                addNewCharacterBoxToBlock(poly(), block);
+                numPoint = 0;
+            }
         }
     } else {
         Q_ASSERT(numPoint == 4);
         if (stroking == false) {
-            stroking = true;
             stroke.setP1(p);
             stroke.setP2(p);
+            if (!pending)
+                stroking = true;
         } else {
             stroke.setP2(p);
-            if (textDirection == DIRECTION_AUTO)
-                textDirection = detectTextDirection(stroke);
-            QVector<QPolygonF> characterPoly = getPendingCharacterPoly();
-            if (!characterPoly.empty())
-                addNewCharacterBoxToBlock(characterPoly.first(), block);
-            stroking = false;
+            if (!pending) {
+                if (textDirection == DIRECTION_AUTO)
+                    textDirection = detectTextDirection(stroke);
+                QVector<QPolygonF> characterPoly = getPendingCharacterPoly();
+                if (!characterPoly.empty())
+                    addNewCharacterBoxToBlock(characterPoly.first(), block);
+                stroking = false;
+            }
         }
-    }
-}
-
-void PerspectiveHelper::onPendingPoint(QPointF p, bool regular, BlockAnnotation *block) {
-    if (numPoint < 4) {
-        int oldNum = numPoint;
-        onStartPoint(p, regular, block);
-        numPoint = oldNum;
-    } else {
-        Q_ASSERT(numPoint == 4);
-        if (stroking)
-            stroke.setP2(p);
     }
 }
 
