@@ -158,19 +158,19 @@ public:
         return blocks.last().onEnterPressed();
     }
 
-    int numWordNeeded() const {
-        Q_ASSERT(!blocks.isEmpty());
-        return blocks.last().numWordNeeded();
+    int numWordNeeded(int index) const {
+        Q_ASSERT(0 <= index && index < blocks.size());
+        return blocks[index].numWordNeeded();
     }
 
-    bool isStringOk() const {
-        Q_ASSERT(!blocks.isEmpty());
-        return blocks.last().isStringOk();
+    bool isStringOk(int index) const {
+        Q_ASSERT(0 <= index && index < blocks.size());
+        return blocks[index].isStringOk();
     }
 
-    void onInputString(QString const &s) {
-        Q_ASSERT(!blocks.isEmpty());
-        blocks.last().onInputString(s);
+    void onInputString(QString const &s, int index) {
+        Q_ASSERT(0 <= index && index < blocks.size());
+        blocks[index].onInputString(s);
     }
 
     void onNewBlock() {

@@ -1,3 +1,4 @@
+#include <QStringList>
 #include <QDebug>
 #include "imageannotation.h"
 
@@ -78,9 +79,8 @@ void PerspectiveHelper::setPoint(QPointF p, bool regular, BlockAnnotation *block
     }
 }
 
-void PerspectiveHelper::onSwitchTool(BlockAnnotation *block) {
+void PerspectiveHelper::onSwitchTool(BlockAnnotation *) {
     toolSwitched = !toolSwitched;
-    block->characters.clear();
 }
 
 bool PerspectiveHelper::onEnterPressed(BlockAnnotation *block) {
@@ -234,9 +234,21 @@ bool BlockAnnotation::isStringOk() const {
 }
 
 void BlockAnnotation::onInputString(QString const &s) {
-    QString trimed = s;
-    trimed.replace(" ", "").replace("\t", "").replace("　", "");
-    int n = qMin(trimed.length(), characters.size());
-    for (int i = 0; i < n; i++)
-        characters[i].text = trimed.mid(i, 1);
+    QStringList list = s.split(" ", QString::SkipEmptyParts);
+    if (list.isEmpty()) {
+        // do nothing
+    } else if (list.size() == 1 && characters.size() != 1) {
+        QString const &trimed = list.first();
+        int n = qMin(trimed.length(), characters.size());
+        for (int i = 0; i < n; i++)
+            characters[i].text = trimed.mid(i, 1);
+        for (int i = n; i < characters.size(); i++)
+            characters[i].text.clear();
+    } else {
+        int n = qMin(list.size(), characters.size());
+        for (int i = 0; i < n; i++)
+            characters[i].text = list[i];
+        for (int i = n; i < characters.size(); i++)
+            characters[i].text.clear();
+    }
 }

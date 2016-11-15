@@ -43,6 +43,7 @@ private:
     QPointF toImageUV(QPoint screenUV) const;
     QPointF toScreenUV(QPointF imageUV) const;
     QPolygonF toScreenPoly(QPolygonF const &poly) const;
+    void inputStringToAnnotation(int index);
 
 private slots:
     void open();
@@ -55,6 +56,7 @@ private slots:
     void setLocation(QPoint loc);
     void resetLocation();
     void onListWidgetSelect();
+    void onListWidgetDoubleClicked(QModelIndex index);
 
 private:
     QAction *openAct;

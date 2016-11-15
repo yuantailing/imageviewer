@@ -2,6 +2,8 @@
 #include <QDebug>
 #include "imageviewer.h"
 
+/// ImageViewer
+
 ImageViewer::ImageViewer(QWidget *parent)
     : QMainWindow(parent)
 {
@@ -15,6 +17,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     statusBar()->addWidget(statusLabel);
     statusBar()->setStyleSheet(QString("QStatusBar::item{border: 0px;background:#ffd;}"));
     connect(listWidget, SIGNAL(currentRowChanged(int)), this, SLOT(onListWidgetSelect()));
+    connect(listWidget, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(onListWidgetDoubleClicked(QModelIndex)));
 
     resetHistory();
     image = new QImage;
@@ -99,7 +102,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
             painter.setPen(QPen(Qt::black));
             painter.setBrush(QBrush(Qt::red));
             QRectF bounding = polyScreen.boundingRect();
-            qreal fontSize = qMax(qMin(bounding.width(), bounding.height()) * 0.67, 5.0);
+            qreal fontSize = qMax(qMin(bounding.width() / charAnno.text.length(), bounding.height()) * 0.67, 5.0);
             painter.setFont(QFont("Arial", fontSize, QFont::Bold));
             painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
         }
@@ -125,22 +128,7 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             addHistoryPoint();
             update();
         } else {
-            int wordNeeded = anno.numWordNeeded();
-            if (wordNeeded > 0) {
-                bool ok;
-                QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字").arg(wordNeeded), QLineEdit::Normal, QString::null, &ok);
-                if (ok && text.length() > 0) {
-                    anno.onInputString(text);
-                    update();
-                    if (anno.isStringOk())
-                        anno.onNewBlock();
-                    else
-                        QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足"));
-                    addHistoryPoint();
-                    updateBlockList();
-                    update();
-                }
-            }
+            inputStringToAnnotation(anno.blocks.size() - 1);
         }
     }
     QMainWindow::keyPressEvent(event);
@@ -307,6 +295,8 @@ void ImageViewer::updateBlockList() {
         BlockAnnotation const &block(anno.blocks[i]);
         QString text("");
         foreach (CharacterAnnotation const &charAnno, block.characters) {
+            if (!text.isEmpty())
+                text += " ";
             if (charAnno.text.isEmpty())
                 text += tr("-");
             else
@@ -333,6 +323,37 @@ QPolygonF ImageViewer::toScreenPoly(QPolygonF const &poly) const {
     foreach (QPointF const &p, poly)
         res.append(toScreenUV(p));
     return res;
+}
+
+void ImageViewer::inputStringToAnnotation(int index) {
+    Q_ASSERT(0 <= index && index < anno.blocks.size());
+    int wordNeeded = anno.numWordNeeded(index);
+    if (wordNeeded > 0) {
+        bool ok;
+        QString originText;
+        foreach (CharacterAnnotation const &charAnno, anno.blocks[index].characters) {
+            if (!charAnno.text.isEmpty()) {
+                if (!originText.isEmpty())
+                    originText += " ";
+                originText += charAnno.text;
+            }
+        }
+        QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字（或英文单词）").arg(wordNeeded),
+                                             QLineEdit::Normal, originText, &ok);
+        if (ok) {
+            anno.onInputString(text, index);
+            update();
+            if (anno.isStringOk(index)) {
+                if (index == anno.blocks.size() - 1)
+                    anno.onNewBlock();
+            } else {
+                QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足"));
+            }
+            addHistoryPoint();
+            updateBlockList();
+            update();
+        }
+    }
 }
 
 void ImageViewer::open() {
@@ -444,6 +465,14 @@ void ImageViewer::resetLocation(QSize size) {
 void ImageViewer::onListWidgetSelect() {
     update();
 }
+
+void ImageViewer::onListWidgetDoubleClicked(QModelIndex index) {
+    if (index.isValid() && 0 <= index.row() && index.row() < anno.blocks.size()) {
+        inputStringToAnnotation(index.row());
+    }
+}
+
+/// QSoftSelectListWidget
 
 QSoftSelectListWidget::QSoftSelectListWidget(QWidget *parent): QListWidget(parent) {
     setMouseTracking(true);
