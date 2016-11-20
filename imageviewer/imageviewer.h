@@ -58,6 +58,7 @@ private:
 private slots:
     void open();
     void save();
+    void exportPackage();
     void undo();
     void redo();
     void switchTool();
@@ -72,6 +73,7 @@ private slots:
 private:
     QAction *openAct;
     QAction *saveAct;
+    QAction *exportPackageAct;
     QAction *undoAct;
     QAction *redoAct;
     QAction *switchToolAct;

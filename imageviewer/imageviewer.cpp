@@ -241,6 +241,9 @@ void ImageViewer::createActions() {
     saveAct->setShortcut(tr("Ctrl+S"));
     connect(saveAct, SIGNAL(triggered()), this, SLOT(save()));
 
+    exportPackageAct = new QAction(tr("&Export package"), this);
+    connect(exportPackageAct, SIGNAL(triggered()), this, SLOT(exportPackage()));
+
     undoAct = new QAction(tr("&Undo"), this);
     undoAct->setShortcut(tr("Ctrl+Z"));
     connect(undoAct, SIGNAL(triggered()), this, SLOT(undo()));
@@ -274,6 +277,7 @@ void ImageViewer::createMenus() {
     fileMenu = new QMenu(tr("&File"), this);
     fileMenu->addAction(openAct);
     fileMenu->addAction(saveAct);
+    fileMenu->addAction(exportPackageAct);
     \
     editMenu = new QMenu(tr("&Edit"), this);
     editMenu->addAction(undoAct);
@@ -306,12 +310,10 @@ void ImageViewer::loadFile(QString const &fileName) {
     dir_new.cdUp();
     if (flag_old == false || dir_old.absolutePath() != dir_new.absolutePath()) {
         imageInFolder.clear();
-        QDir dir(fileName);
-        dir.cdUp();
         QStringList filters;
         filters << "*.jpg" << "*.png" << "*.bmp" << "*.jpeg" << "*.gif";
-        foreach (QString const &fileName, dir.entryList(filters, QDir::Files | QDir::Readable))
-            imageInFolder.insert(fileName, dir.filePath(fileName));
+        foreach (QString const &fileName, dir_new.entryList(filters, QDir::Files | QDir::Readable))
+            imageInFolder.insert(fileName, dir_new.filePath(fileName));
     }
 
     imageFileName = fileName;
@@ -473,8 +475,7 @@ QDataStream::Status ImageViewer::fromQByteArray(QByteArray &array, T &t) {
 }
 
 void ImageViewer::open() {
-    QString fileName = QFileDialog::getOpenFileName(this,
-                                    tr("Open File"), QDir::currentPath());
+    QString fileName = QFileDialog::getOpenFileName(this);
     if (!fileName.isEmpty()) {
         loadFile(fileName);
     }
@@ -493,6 +494,35 @@ void ImageViewer::save() {
     stream << qCompress(toQByteArray(anno));
     stream << qCompress(toQByteArray(history));
     file.close();
+}
+
+void ImageViewer::exportPackage() {
+    save();
+    QString fileName = QFileDialog::getSaveFileName(this);
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        QStringList exportList;
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::information(this, tr("Image Viewer"),
+                                     tr("Cannot write %1.").arg(file.fileName()));
+            return;
+        }
+        for (QMap<QString, QString>::Iterator it = imageInFolder.begin(); it != imageInFolder.end(); it++) {
+            QFile f(annotationFileName(it.value()));
+            if (f.open(QIODevice::ReadOnly)) {
+                file.write(toQByteArray(it.key()));
+                file.write(f.readAll());
+                f.close();
+                exportList << it.key();
+            }
+        }
+        file.close();
+        QString info = tr("导出了 %1 张图片的标注：").arg(exportList.size());
+        info += "\n";
+        foreach (QString const &s, exportList)
+            info += s + ", ";
+        QMessageBox::information(this, tr("Image Viewer"), info);
+    }
 }
 
 void ImageViewer::undo() {
