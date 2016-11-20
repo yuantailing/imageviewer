@@ -121,15 +121,15 @@ public:
 
 class ImageAnnotation {
 public:
-    int version;
-    QString imageId;
     QVector<BlockAnnotation> blocks;
+    enum { VERSION = 0x1000 };
 
 public:
     ImageAnnotation() {
-        version = 1000;
-        imageId = QString("");
     }
+
+    friend QDataStream &operator <<(QDataStream &stream, ImageAnnotation const &anno);
+    friend QDataStream &operator >>(QDataStream &stream, ImageAnnotation &anno);
 
     void onStartPoint(QPointF p, bool regular) {
         Q_ASSERT(!blocks.isEmpty());

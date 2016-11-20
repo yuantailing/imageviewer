@@ -13,33 +13,31 @@ ImageViewer::ImageViewer(QWidget *parent)
     centralWidget = new QWidget(this);
     centralWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
     listWidget = new QSoftSelectListWidget(centralWidget);
+    listWidget->setFocusPolicy(Qt::NoFocus);
     statusLabel = new QLabel(this);
     statusBar()->addWidget(statusLabel);
     statusBar()->setStyleSheet(QString("QStatusBar::item{border: 0px;background:#ffd;}"));
     connect(listWidget, SIGNAL(currentRowChanged(int)), this, SLOT(onListWidgetSelect()));
     connect(listWidget, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(onListWidgetDoubleClicked(QModelIndex)));
 
-    resetHistory();
-    image = new QImage;
-    scaledImage = new QImage;
-    applyImage(QImage("148.jpg"));           //! Test
     controlPressed = false;
     shiftPressed = false;
     mousePressed = false;
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
     drawingLabel = false;
+    resetHistory();
 
     setWindowTitle(tr("Image Viewer"));
     setCentralWidget(centralWidget);
     this->setMouseTracking(true);
     centralWidget->setMouseTracking(true);
+    this->setAcceptDrops(true);
     resize(1000, 800);
+    loadFile("148.jpg");           //! Test
 }
 
 ImageViewer::~ImageViewer() {
-    delete image;
-    delete scaledImage;
 }
 
 void ImageViewer::resizeEvent(QResizeEvent *event) {
@@ -59,7 +57,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
     painter.begin(this);
 
     // 绘制图片
-    painter.drawImage(imageLeftTop, *scaledImage);
+    painter.drawImage(imageLeftTop, scaledImage);
 
     // 确定选中的Block
     int selectedBlock = -1;
@@ -129,6 +127,20 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             update();
         } else {
             inputStringToAnnotation(anno.blocks.size() - 1);
+        }
+    } else if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) {
+        QMap<QString, QString>::Iterator it = imageInFolder.find(QFileInfo(imageFileName).fileName());
+        if (it != imageInFolder.end()) {
+            if (event->key() == Qt::Key_Left) {
+                if (it != imageInFolder.begin()) {
+                    it--;
+                    loadFile(it.value());
+                }
+            } else {
+                it++;
+                if (it != imageInFolder.end())
+                    loadFile(it.value());
+            }
         }
     }
     QMainWindow::keyPressEvent(event);
@@ -201,10 +213,33 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
     QMainWindow::mouseReleaseEvent(event);
 }
 
+void ImageViewer::dragEnterEvent(QDragEnterEvent *event) {
+    if (event->mimeData()->hasFormat("text/uri-list"))
+        event->acceptProposedAction();
+    QMainWindow::dragEnterEvent(event);
+}
+
+void ImageViewer::dropEvent(QDropEvent *event){
+    QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.isEmpty())
+        return;
+    loadFile(urls.first().toLocalFile());
+    QMainWindow::dropEvent(event);
+}
+
+void ImageViewer::closeEvent(QCloseEvent *event) {
+    save();
+    QMainWindow::closeEvent(event);
+}
+
 void ImageViewer::createActions() {
-    openAct = new QAction(tr("&Open..."), this);
+    openAct = new QAction(tr("&Open"), this);
     openAct->setShortcut(tr("Ctrl+O"));
     connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
+
+    saveAct = new QAction(tr("&Save"), this);
+    saveAct->setShortcut(tr("Ctrl+S"));
+    connect(saveAct, SIGNAL(triggered()), this, SLOT(save()));
 
     undoAct = new QAction(tr("&Undo"), this);
     undoAct->setShortcut(tr("Ctrl+Z"));
@@ -238,6 +273,7 @@ void ImageViewer::createActions() {
 void ImageViewer::createMenus() {
     fileMenu = new QMenu(tr("&File"), this);
     fileMenu->addAction(openAct);
+    fileMenu->addAction(saveAct);
     \
     editMenu = new QMenu(tr("&Edit"), this);
     editMenu->addAction(undoAct);
@@ -255,17 +291,74 @@ void ImageViewer::createMenus() {
     menuBar()->addMenu(viewMenu);
 }
 
-void ImageViewer::applyImage(const QImage &im) {
-    *image = im;
+void ImageViewer::loadFile(QString const &fileName) {
+    QImage newImage(fileName);
+    if (newImage.isNull()) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot load %1.").arg(fileName));
+        return;
+    }
+    save();
+
+    QDir dir_old(imageFileName);
+    bool flag_old = dir_old.cdUp();
+    QDir dir_new(fileName);
+    dir_new.cdUp();
+    if (flag_old == false || dir_old.absolutePath() != dir_new.absolutePath()) {
+        imageInFolder.clear();
+        QDir dir(fileName);
+        dir.cdUp();
+        QStringList filters;
+        filters << "*.jpg" << "*.png" << "*.bmp" << "*.jpeg" << "*.gif";
+        foreach (QString const &fileName, dir.entryList(filters, QDir::Files | QDir::Readable))
+            imageInFolder.insert(fileName, dir.filePath(fileName));
+    }
+
+    imageFileName = fileName;
+    image = newImage;
     resetLocation();
     updateScaledImage();
     resetHistory();
+    QFile file(annotationFileName(imageFileName));
+    if (file.open(QIODevice::ReadOnly)) {
+        QDataStream stream(&file);
+        QByteArray annoArray, historyArray;
+        stream >> annoArray;
+        annoArray = qUncompress(annoArray);
+        QDataStream::Status status1 = fromQByteArray(annoArray, anno);
+        stream >> historyArray;
+        historyArray = qUncompress(historyArray);
+        QDataStream::Status status2 = fromQByteArray(historyArray, history);
+        file.close();
+        if (status1 != QDataStream::Ok || status2 != QDataStream::Ok) {
+            file.copy(file.fileName() + ".bak");
+            QMessageBox::information(this, tr("Image Viewer"),
+                                     tr("File is corrupted, data will be cleared: %1").arg(file.fileName()));
+            if (status1 != QDataStream::Ok) {
+                if (status2 == QDataStream::Ok && !history.isEmpty())
+                    anno = history.back();
+                else
+                    resetHistory();
+            }
+            if (status2 != QDataStream::Ok) {
+                history.clear();
+                history.append(ImageAnnotation());
+                ImageAnnotation loadedAnno = anno;
+                resetHistory();
+                anno = loadedAnno;
+                addHistoryPoint();
+            }
+        }
+    }
+    updateBlockList();
     update();
 }
 
 void ImageViewer::updateScaledImage() {
-    *scaledImage = image->scaled(QSize(image->width() * scaleFactor, image->height() * scaleFactor),
-                                 Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    if (image.isNull())
+        return;
+    scaledImage = image.scaled(QSize(image.width() * scaleFactor, image.height() * scaleFactor),
+                               Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
 
 void ImageViewer::resetHistory() {
@@ -356,18 +449,50 @@ void ImageViewer::inputStringToAnnotation(int index) {
     }
 }
 
+QString ImageViewer::annotationFileName(QString const &imageFileName) {
+    if (imageFileName.isEmpty())
+        return QString();
+    QDir dir(imageFileName);
+    dir.cdUp();
+    return dir.filePath(QFileInfo(imageFileName).completeBaseName() + ".array");
+}
+
+template <typename T>
+QByteArray ImageViewer::toQByteArray(T const &t) {
+    QByteArray array;
+    QDataStream stream(&array, QIODevice::WriteOnly | QIODevice::Unbuffered);
+    stream << t;
+    return array;
+}
+
+template <typename T>
+QDataStream::Status ImageViewer::fromQByteArray(QByteArray &array, T &t) {
+    QDataStream stream(&array, QIODevice::ReadOnly);
+    stream >> t;
+    return stream.status();
+}
+
 void ImageViewer::open() {
     QString fileName = QFileDialog::getOpenFileName(this,
                                     tr("Open File"), QDir::currentPath());
     if (!fileName.isEmpty()) {
-        QImage image(fileName);
-        if (image.isNull()) {
-            QMessageBox::information(this, tr("Image Viewer"),
-                                     tr("Cannot load %1.").arg(fileName));
-            return;
-        }
-        applyImage(image);
+        loadFile(fileName);
     }
+}
+
+void ImageViewer::save() {
+    if (imageFileName.isEmpty())
+        return;
+    QFile file(annotationFileName(imageFileName));
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot write %1.").arg(file.fileName()));
+        return;
+    }
+    QDataStream stream(&file);
+    stream << qCompress(toQByteArray(anno));
+    stream << qCompress(toQByteArray(history));
+    file.close();
 }
 
 void ImageViewer::undo() {
@@ -456,9 +581,9 @@ void ImageViewer::resetLocation() {
 void ImageViewer::resetLocation(QSize size) {
     int w = size.width();
     int h = size.height() - menuBar()->height();
-    scaleFactor = qMin((qreal)w / image->width(), (qreal)h / image->height());
+    scaleFactor = qMin((qreal)w / image.width(), (qreal)h / image.height());
     updateScaledImage();
-    setLocation(QPoint((w - scaledImage->width()) / 2, menuBar()->height() + (h - scaledImage->height()) / 2));
+    setLocation(QPoint((w - scaledImage.width()) / 2, menuBar()->height() + (h - scaledImage.height()) / 2));
     update();
 }
 

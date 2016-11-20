@@ -30,11 +30,14 @@ protected:
     void mousePressEvent(QMouseEvent *);
     void mouseMoveEvent(QMouseEvent *);
     void mouseReleaseEvent(QMouseEvent *);
+    void dragEnterEvent(QDragEnterEvent *);
+    void dropEvent(QDropEvent *);
+    void closeEvent(QCloseEvent *);
 
 private:
     void createActions();
     void createMenus();
-    void applyImage(QImage const &im);
+    void loadFile(QString const &fileName);
     void updateScaledImage();
     void resetLocation(QSize size);
     void resetHistory();
@@ -45,8 +48,16 @@ private:
     QPolygonF toScreenPoly(QPolygonF const &poly) const;
     void inputStringToAnnotation(int index);
 
+    static QString annotationFileName(QString const &imageFileName);
+
+    template <typename T>
+    static QByteArray toQByteArray(T const &t);
+    template <typename T>
+    static QDataStream::Status fromQByteArray(QByteArray &array, T &t);
+
 private slots:
     void open();
+    void save();
     void undo();
     void redo();
     void switchTool();
@@ -60,6 +71,7 @@ private slots:
 
 private:
     QAction *openAct;
+    QAction *saveAct;
     QAction *undoAct;
     QAction *redoAct;
     QAction *switchToolAct;
@@ -82,8 +94,10 @@ private:
     QWidget *centralWidget;
     QListWidget *listWidget;
     QLabel* statusLabel;
-    QImage *image;
-    QImage *scaledImage;
+    QMap<QString, QString> imageInFolder;
+    QString imageFileName;
+    QImage image;
+    QImage scaledImage;
     QPoint imageLeftTop;
     qreal scaleFactor;
 

@@ -1,4 +1,5 @@
 #include <QStringList>
+#include <QDataStream>
 #include <QDebug>
 #include "imageannotation.h"
 
@@ -6,6 +7,8 @@
 
 PerspectiveHelper::PerspectiveHelper() {
     numPoint = 0;
+    for (size_t i = 0; i < sizeof(points) / sizeof(*points); i++)
+        points[i] = QPointF(0, 0);
     stroke = QLineF(QPointF(0, 0), QPointF(0, 0));
     toolSwitched = false;
     stroking = false;
@@ -251,4 +254,83 @@ void BlockAnnotation::onInputString(QString const &s) {
         for (int i = n; i < characters.size(); i++)
             characters[i].text.clear();
     }
+}
+
+QDataStream &operator <<(QDataStream &stream, CharacterAnnotation const &anno) {
+    stream << anno.box;
+    stream << anno.text;
+    return stream;
+}
+
+QDataStream &operator >>(QDataStream &stream, CharacterAnnotation &anno) {
+    stream >> anno.box;
+    stream >> anno.text;
+    return stream;
+}
+
+QDataStream &operator <<(QDataStream &stream, PerspectiveHelper const &helper) {
+    stream << helper.numPoint;
+    for (size_t i = 0; i < sizeof(helper.points) / sizeof(*helper.points); i++)
+        stream << helper.points[i];
+    stream << helper.stroke;
+    stream << helper.toolSwitched;
+    stream << helper.stroking;
+    stream << helper.singleCharacter;
+    stream << (quint32)helper.textDirection;
+    return stream;
+}
+
+QDataStream &operator >>(QDataStream &stream, PerspectiveHelper &helper) {
+    stream >> helper.numPoint;
+    for (size_t i = 0; i < sizeof(helper.points) / sizeof(*helper.points); i++)
+        stream >> helper.points[i];
+    stream >> helper.stroke;
+    stream >> helper.toolSwitched;
+    stream >> helper.stroking;
+    stream >> helper.singleCharacter;
+    quint32 temp;
+    stream >> temp;
+    helper.textDirection = static_cast<PerspectiveHelper::TextDirection>(temp);
+    return stream;
+
+}
+
+QDataStream &operator <<(QDataStream &stream, BlockAnnotation const &anno) {
+    stream << anno.characters;
+    stream << (quint32)anno.helperType;
+    stream << anno.perspectiveHelper;
+    return stream;
+}
+
+QDataStream &operator >>(QDataStream &stream, BlockAnnotation &anno) {
+    stream >> anno.characters;
+    quint32 temp;
+    stream >> temp;
+    anno.helperType = static_cast<BlockAnnotation::HelperType>(temp);
+    stream >> anno.perspectiveHelper;
+    return stream;
+}
+
+QDataStream &operator <<(QDataStream &stream, ImageAnnotation const &anno) {
+    quint32 version = anno.VERSION;
+    stream << version;
+    QDataStream::Version streamVersion = static_cast<QDataStream::Version>(stream.version());
+    stream.setVersion(QDataStream::Qt_5_2);
+    stream << anno.blocks;
+    stream.setVersion(streamVersion);
+    return stream;
+}
+
+QDataStream &operator >>(QDataStream &stream, ImageAnnotation &anno) {
+    quint32 version;
+    stream >> version;
+    if (version != (quint32)anno.VERSION) {
+        stream.setStatus(QDataStream::ReadCorruptData);
+        return stream;
+    }
+    QDataStream::Version streamVersion = static_cast<QDataStream::Version>(stream.version());
+    stream.setVersion(QDataStream::Qt_5_2);
+    stream >> anno.blocks;
+    stream.setVersion(streamVersion);
+    return stream;
 }
