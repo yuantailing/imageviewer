@@ -129,18 +129,13 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             inputStringToAnnotation(anno.blocks.size() - 1);
         }
     } else if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) {
-        QMap<QString, QString>::Iterator it = imageInFolder.find(QFileInfo(imageFileName).fileName());
-        if (it != imageInFolder.end()) {
-            if (event->key() == Qt::Key_Left) {
-                if (it != imageInFolder.begin()) {
-                    it--;
-                    loadFile(it.value());
-                }
-            } else {
-                it++;
-                if (it != imageInFolder.end())
-                    loadFile(it.value());
-            }
+        int current = imagesInFolder.indexOf(QFileInfo(imageFileName).fileName());
+        if (event->key() == Qt::Key_Left) {
+            if (current > 0)
+                loadFile(imageFolder.filePath(imagesInFolder[current - 1]));
+        } else {
+            if (current >= 0 && current + 1 < imagesInFolder.size())
+                loadFile(imageFolder.filePath(imagesInFolder[current + 1]));
         }
     }
     QMainWindow::keyPressEvent(event);
@@ -309,14 +304,15 @@ void ImageViewer::loadFile(QString const &fileName) {
     QDir dir_new(fileName);
     dir_new.cdUp();
     if (flag_old == false || dir_old.absolutePath() != dir_new.absolutePath()) {
-        imageInFolder.clear();
+        imageFolder = dir_new;
         QStringList filters;
         filters << "*.jpg" << "*.png" << "*.bmp" << "*.jpeg" << "*.gif";
-        foreach (QString const &fileName, dir_new.entryList(filters, QDir::Files | QDir::Readable))
-            imageInFolder.insert(fileName, dir_new.filePath(fileName));
+        imagesInFolder = dir_new.entryList(filters, QDir::Files | QDir::Readable);
     }
 
     imageFileName = fileName;
+    setWindowTitle(tr("[第%1/%2张] %3").arg(1 + imagesInFolder.indexOf(QFileInfo(imageFileName).fileName())).
+                   arg(imagesInFolder.size()).arg(QFileInfo(imageFileName).fileName()));
     image = newImage;
     resetLocation();
     updateScaledImage();
@@ -451,12 +447,10 @@ void ImageViewer::inputStringToAnnotation(int index) {
     }
 }
 
-QString ImageViewer::annotationFileName(QString const &imageFileName) {
+QString ImageViewer::annotationFileName(QString const &imageFileName) const {
     if (imageFileName.isEmpty())
         return QString();
-    QDir dir(imageFileName);
-    dir.cdUp();
-    return dir.filePath(QFileInfo(imageFileName).completeBaseName() + ".array");
+    return imageFolder.filePath(QFileInfo(imageFileName).completeBaseName() + ".array");
 }
 
 template <typename T>
@@ -498,7 +492,7 @@ void ImageViewer::save() {
 
 void ImageViewer::exportPackage() {
     save();
-    QString fileName = QFileDialog::getSaveFileName(this);
+    QString fileName = QFileDialog::getSaveFileName(this, QString(), imageFolder.filePath("annotation.package"));
     if (!fileName.isEmpty()) {
         QFile file(fileName);
         QStringList exportList;
@@ -507,13 +501,15 @@ void ImageViewer::exportPackage() {
                                      tr("Cannot write %1.").arg(file.fileName()));
             return;
         }
-        for (QMap<QString, QString>::Iterator it = imageInFolder.begin(); it != imageInFolder.end(); it++) {
-            QFile f(annotationFileName(it.value()));
+        QDataStream stream(&file);
+        for (QStringList::Iterator it = imagesInFolder.begin(); it != imagesInFolder.end(); it++) {
+            QFile f(annotationFileName(imageFolder.filePath(*it)));
             if (f.open(QIODevice::ReadOnly)) {
-                file.write(toQByteArray(it.key()));
-                file.write(f.readAll());
+                QFileInfo fileInfo(f);
+                stream << fileInfo.completeBaseName();
+                stream << f.readAll();
                 f.close();
-                exportList << it.key();
+                exportList << fileInfo.fileName();
             }
         }
         file.close();

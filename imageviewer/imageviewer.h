@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QListWidget>
+#include <QDir>
 #include "imageannotation.h"
 
 QT_BEGIN_NAMESPACE
@@ -48,7 +49,7 @@ private:
     QPolygonF toScreenPoly(QPolygonF const &poly) const;
     void inputStringToAnnotation(int index);
 
-    static QString annotationFileName(QString const &imageFileName);
+    QString annotationFileName(QString const &imageFileName) const;
 
     template <typename T>
     static QByteArray toQByteArray(T const &t);
@@ -96,7 +97,8 @@ private:
     QWidget *centralWidget;
     QListWidget *listWidget;
     QLabel* statusLabel;
-    QMap<QString, QString> imageInFolder;
+    QDir imageFolder;
+    QStringList imagesInFolder;
     QString imageFileName;
     QImage image;
     QImage scaledImage;
