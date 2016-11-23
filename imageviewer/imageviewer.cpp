@@ -34,7 +34,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     centralWidget->setMouseTracking(true);
     this->setAcceptDrops(true);
     resize(1000, 800);
-    loadFile("148.jpg");           //! Test
+    resetLocation();
 }
 
 ImageViewer::~ImageViewer() {
@@ -57,54 +57,56 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
     painter.begin(this);
 
     // 绘制图片
-    painter.drawImage(imageLeftTop, scaledImage);
+    if (!scaledImage.isNull())
+        painter.drawImage(imageLeftTop, scaledImage);
 
     // 确定选中的Block
     int selectedBlock = -1;
     if (!listWidget->selectedItems().isEmpty())
         selectedBlock = listWidget->row(listWidget->selectedItems().first());
 
-    for (int i = 0; i < anno.blocks.size(); i++) {
-        BlockAnnotation const &block(anno.blocks[i]);
-        qreal polyOpacity = i == selectedBlock ? 0.5 : 0.3;
-        qreal charOpacity = i == selectedBlock ? 1.0 : 0.75;
+    if (!controlPressed || !shiftPressed)
+        for (int i = 0; i < anno.blocks.size(); i++) {
+            BlockAnnotation const &block(anno.blocks[i]);
+            qreal polyOpacity = i == selectedBlock ? 0.5 : 0.3;
+            qreal charOpacity = i == selectedBlock ? 1.0 : 0.75;
 
-        // 绘制辅助图层
-        painter.setOpacity(polyOpacity);
-        painter.setPen(QPen(Qt::blue, 3.0));
-        painter.setBrush(QBrush(Qt::yellow));
-        foreach (QPolygonF const &poly, block.getHelperPoly())
-            painter.drawPolygon(toScreenPoly(poly));
+            // 绘制辅助图层
+            painter.setOpacity(polyOpacity);
+            painter.setPen(QPen(Qt::blue, 3.0));
+            painter.setBrush(QBrush(Qt::yellow));
+            foreach (QPolygonF const &poly, block.getHelperPoly())
+                painter.drawPolygon(toScreenPoly(poly));
 
-        // 绘制正在标注的字符区域
-        painter.setOpacity(polyOpacity);
-        painter.setPen(QPen(Qt::green));
-        painter.setBrush(QBrush(Qt::red));
-        foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
-            painter.drawPolygon(toScreenPoly(poly));
-
-        // 绘制已标注的字符区域
-        foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
-            QPolygonF polyScreen;
-            foreach (QPointF p, charAnno.box)
-                polyScreen.append(toScreenUV(p));
-
-            // 字符包围盒
+            // 绘制正在标注的字符区域
             painter.setOpacity(polyOpacity);
             painter.setPen(QPen(Qt::green));
             painter.setBrush(QBrush(Qt::red));
-            painter.drawPolygon(polyScreen);
+            foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
+                painter.drawPolygon(toScreenPoly(poly));
 
-            // 打印文字
-            painter.setOpacity(charOpacity);
-            painter.setPen(QPen(Qt::black));
-            painter.setBrush(QBrush(Qt::red));
-            QRectF bounding = polyScreen.boundingRect();
-            qreal fontSize = qMax(qMin(bounding.width() / charAnno.text.length(), bounding.height()) * 0.67, 5.0);
-            painter.setFont(QFont("Arial", fontSize, QFont::Bold));
-            painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
+            // 绘制已标注的字符区域
+            foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
+                QPolygonF polyScreen;
+                foreach (QPointF p, charAnno.box)
+                    polyScreen.append(toScreenUV(p));
+
+                // 字符包围盒
+                painter.setOpacity(polyOpacity);
+                painter.setPen(QPen(Qt::green));
+                painter.setBrush(QBrush(Qt::red));
+                painter.drawPolygon(polyScreen);
+
+                // 打印文字
+                painter.setOpacity(charOpacity);
+                painter.setPen(QPen(Qt::black));
+                painter.setBrush(QBrush(Qt::red));
+                QRectF bounding = polyScreen.boundingRect();
+                qreal fontSize = qMax(qMin(bounding.width() / charAnno.text.length(), bounding.height()) * 0.67, 5.0);
+                painter.setFont(QFont("Arial", fontSize, QFont::Bold));
+                painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
+            }
         }
-    }
 
     // 绘制Tips
     statusLabel->setText(anno.getTips());
@@ -114,9 +116,10 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
 }
 
 void ImageViewer::keyPressEvent(QKeyEvent *event) {
-    if (event->key() == Qt::Key_Control)
+    if (event->key() == Qt::Key_Control) {
         controlPressed = true;
-    else if (event->key() == Qt::Key_Shift) {
+        update();
+    } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = true;
         anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
         update();
@@ -124,6 +127,7 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         bool annoChanged = anno.onEnterPressed();
         if (annoChanged) {
             addHistoryPoint();
+            updateBlockList();
             update();
         } else {
             inputStringToAnnotation(anno.blocks.size() - 1);
@@ -147,9 +151,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
 }
 
 void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
-    if (event->key() == Qt::Key_Control)
+    if (event->key() == Qt::Key_Control) {
         controlPressed = false;
-    else if (event->key() == Qt::Key_Shift) {
+        update();
+    } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = false;
         anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
         update();
@@ -357,8 +362,10 @@ void ImageViewer::loadFile(QString const &fileName) {
 }
 
 void ImageViewer::updateScaledImage() {
-    if (image.isNull())
+    if (image.isNull()) {
+        scaledImage = image.copy();
         return;
+    }
     scaledImage = image.scaled(QSize(image.width() * scaleFactor, image.height() * scaleFactor),
                                Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 }
@@ -509,7 +516,7 @@ void ImageViewer::exportPackage() {
         }
         for (QMap<QString, QString>::Iterator it = imageInFolder.begin(); it != imageInFolder.end(); it++) {
             QFile f(annotationFileName(it.value()));
-            if (f.open(QIODevice::ReadOnly)) {
+            if (f.exists() && f.open(QIODevice::ReadOnly)) {
                 file.write(toQByteArray(it.key()));
                 file.write(f.readAll());
                 f.close();
@@ -611,9 +618,15 @@ void ImageViewer::resetLocation() {
 void ImageViewer::resetLocation(QSize size) {
     int w = size.width();
     int h = size.height() - menuBar()->height();
-    scaleFactor = qMin((qreal)w / image.width(), (qreal)h / image.height());
-    updateScaledImage();
-    setLocation(QPoint((w - scaledImage.width()) / 2, menuBar()->height() + (h - scaledImage.height()) / 2));
+    if (image.isNull()) {
+        scaleFactor = 1;
+        updateScaledImage();
+        setLocation(QPoint(0, 0));
+    } else {
+        scaleFactor = qMin((qreal)w / image.width(), (qreal)h / image.height());
+        updateScaledImage();
+        setLocation(QPoint((w - scaledImage.width()) / 2, menuBar()->height() + (h - scaledImage.height()) / 2));
+    }
     update();
 }
 
