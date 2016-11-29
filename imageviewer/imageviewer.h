@@ -88,6 +88,7 @@ private:
 
     bool controlPressed;
     bool shiftPressed;
+    bool spacePressed;
     bool mousePressed;
     QPoint mouseLastPos;
 

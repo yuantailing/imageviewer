@@ -22,6 +22,7 @@ ImageViewer::ImageViewer(QWidget *parent)
 
     controlPressed = false;
     shiftPressed = false;
+    spacePressed = false;
     mousePressed = false;
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
@@ -33,8 +34,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     this->setMouseTracking(true);
     centralWidget->setMouseTracking(true);
     this->setAcceptDrops(true);
-    resize(1000, 800);
-    resetLocation();
+    this->setWindowState(Qt::WindowMaximized);
 }
 
 ImageViewer::~ImageViewer() {
@@ -119,6 +119,8 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control) {
         controlPressed = true;
         update();
+    } else if (event->key() == Qt::Key_Space) {
+        spacePressed = true;
     } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = true;
         anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
@@ -149,6 +151,8 @@ void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
     if (event->key() == Qt::Key_Control) {
         controlPressed = false;
         update();
+    } else if (event->key() == Qt::Key_Space) {
+        spacePressed = false;
     } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = false;
         anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
@@ -158,7 +162,7 @@ void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void ImageViewer::wheelEvent(QWheelEvent *event) {
-    if (controlPressed) {
+    if (controlPressed || spacePressed) {
         if (event->delta() > 0) {
             zoomIn();
         } else if (event->delta() < 0) {
@@ -171,7 +175,7 @@ void ImageViewer::wheelEvent(QWheelEvent *event) {
 void ImageViewer::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
         mousePressed = true;
-        if (controlPressed) {
+        if (controlPressed || spacePressed) {
             draggingImage = true;
         } else {
             drawingLabel = true;
