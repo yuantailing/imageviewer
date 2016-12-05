@@ -7,7 +7,6 @@
 #include <QDataStream>
 #include <QDebug>
 #include <queue>
-#include <QQueue>
 #include "../imageviewer/imageannotation.h"
 
 static QTextStream cout(stdout);
@@ -94,7 +93,7 @@ QJsonObject validateSingle(QString fileName, QMap<QString, QVector<CharacterAnno
         }
         file.close();
     } else {
-        res["error"] = 1;
+        res["error"] = 3;
         res["errorMessage"] = QCoreApplication::tr("file open failed");
     }
     res["error"] = 0;
@@ -219,6 +218,8 @@ QJsonObject validateCross(QString fileName1, QString fileName2, qreal ratio) {
     }
 
     res["error"] = 0;
+    res["images1"] = res1["images"].toObject();
+    res["images2"] = res2["images"].toObject();
     QJsonObject feed = feedback(images1, images2, ratio);
     res["feedback1"] = feed["feedback"];
     res["feedback2"] = feed["feedbackRef"];
@@ -229,21 +230,22 @@ QJsonObject validateCross(QString fileName1, QString fileName2, qreal ratio) {
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+    app.setApplicationVersion("v0.0.1");
+    cout.setCodec("UTF-8");
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Cross Validation");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("package-1", QCoreApplication::translate("main", "Source file to copy."));
-    parser.addPositionalArgument("package-2", QCoreApplication::translate("main", "Destination directory."));
-
+    parser.addPositionalArgument("package-1", QCoreApplication::translate("main", "The first package."));
+    parser.addPositionalArgument("package-2", QCoreApplication::translate("main", "The second package (if --single is not set)."));
 
     QCommandLineOption singleOption(QStringList() << "s" << "single",
-            QCoreApplication::translate("main", "Only validate single package"));
+            QCoreApplication::translate("main", "Only validate single package."));
     parser.addOption(singleOption);
 
     QCommandLineOption ratioOption(QStringList() << "r" << "ratio",
-            QCoreApplication::translate("main", "Minimum repeat ratio between pylogons"),
+            QCoreApplication::translate("main", "Minimum overlap ratio between pylogons."),
             QCoreApplication::translate("main", "ratio"));
     parser.addOption(ratioOption);
 
@@ -254,19 +256,24 @@ int main(int argc, char *argv[])
     // package-1 is args.at(0), package-2 is args.at(1)
 
     QJsonObject json;
-    json["error"] = 0;
     if (parser.isSet(singleOption)) {
-        Q_ASSERT(args.length() == 1);
-        json = validateSingle(args.at(0));
+        if (args.size() != 1) {
+            json["error"] = 1;
+            json["errorMessage"] = "invalid argument";
+        } else {
+            json = validateSingle(args.at(0));
+        }
     } else {
-        Q_ASSERT(args.length() == 2);
-        Q_ASSERT(parser.isSet(ratioOption));
-        qreal ratio = (qreal)parser.value(ratioOption).toDouble();
-        json = validateCross(args.at(0), args.at(1), ratio);
+        if (args.size() != 2 || !parser.isSet(ratioOption)) {
+            json["error"] = 1;
+            json["errorMessage"] = "invalid argument";
+        } else {
+            qreal ratio = (qreal)parser.value(ratioOption).toDouble();
+            json = validateCross(args.at(0), args.at(1), ratio);
+        }
     }
     QJsonDocument doc;
     doc.setObject(json);
-    // cout << doc.toJson(QJsonDocument::Indented);
     cout << doc.toJson(QJsonDocument::Compact);
 
     return 0;
