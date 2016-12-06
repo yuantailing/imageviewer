@@ -9,6 +9,7 @@
 #include <queue>
 #include "../imageviewer/imageannotation.h"
 
+static QTextStream cin(stdin);
 static QTextStream cout(stdout);
 
 QJsonArray poly2json(QPolygonF const &poly) {
@@ -29,72 +30,66 @@ QJsonObject character2json(CharacterAnnotation charAnno) {
     return res;
 }
 
-QJsonObject validateSingle(QString fileName, QMap<QString, QVector<CharacterAnnotation> > *m = nullptr) {
+QJsonObject validateSingle(QString b64str, QMap<QString, QVector<CharacterAnnotation> > *m = nullptr) {
     QJsonObject res;
     QJsonObject images;
-    QFile file(fileName);
-    if (file.open(QIODevice::ReadOnly)) {
-        QDataStream stream(&file);
-        while (!stream.atEnd()) {
-            QString baseName;
-            QByteArray fileContent;
-            stream >> baseName;
-            stream >> fileContent;
-            if (stream.status() != QDataStream::Ok) {
-                res["error"] = 2;
-                res["errorMessage"] = QCoreApplication::tr("stream is bad");
-                return res;
-            }
-            QDataStream st1(&fileContent, QIODevice::ReadOnly);
-            QByteArray annoArray;
-            st1 >> annoArray;
-            if (st1.status() != QDataStream::Ok) {
-                res["error"] = 2;
-                res["errorMessage"] = QCoreApplication::tr("stream is bad");
-                return res;
-            }
-            annoArray = qUncompress(annoArray);
-            QDataStream st2(&annoArray, QIODevice::ReadOnly);
-            ImageAnnotation anno;
-            st2 >> anno;
-            if (st2.status() != QDataStream::Ok) {
-                res["error"] = 2;
-                res["errorMessage"] = QCoreApplication::tr("stream is bad");
-                return res;
-            }
-            int numBlock = 0;
-            int numCharacter = 0;
-            QJsonArray numCharInBlock;
-            QJsonArray characters;
-            QVector<CharacterAnnotation> v;
-            foreach (BlockAnnotation const &block, anno.blocks) {
-                int cnt = 0;
-                foreach (CharacterAnnotation const &ch, block.characters) {
-                    if (ch.text.isEmpty())
-                        continue;
-                    cnt++;
-                    characters.append(character2json(ch));
-                    v.append(ch);
-                }
-                if (cnt > 0) {
-                    numBlock++;
-                    numCharacter += cnt;
-                    numCharInBlock.append(cnt);
-                }
-            }
-            QJsonObject img;
-            img["numBlock"] = numBlock;
-            img["numCharacter"] = numCharacter;
-            img["numCharInBlock"] = numCharInBlock;
-            img["characters"] = characters;
-            images[baseName] = img;
-            if (m != nullptr)
-                (*m)[baseName] = v;
+    QByteArray array = QByteArray::fromBase64(b64str.toStdString().c_str());
+    QDataStream stream(&array, QIODevice::ReadOnly);
+    while (!stream.atEnd()) {
+        QString baseName;
+        QByteArray fileContent;
+        stream >> baseName;
+        stream >> fileContent;
+        if (stream.status() != QDataStream::Ok) {
+            res["error"] = 2;
+            res["errorMessage"] = QCoreApplication::tr("stream is bad");
+            return res;
         }
-        file.close();
-    } else {
-        res["error"] = 3;
-        res["errorMessage"] = QCoreApplication::tr("file open failed");
+        QDataStream st1(&fileContent, QIODevice::ReadOnly);
+        QByteArray annoArray;
+        st1 >> annoArray;
+        if (st1.status() != QDataStream::Ok) {
+            res["error"] = 2;
+            res["errorMessage"] = QCoreApplication::tr("stream is bad");
+            return res;
+        }
+        annoArray = qUncompress(annoArray);
+        QDataStream st2(&annoArray, QIODevice::ReadOnly);
+        ImageAnnotation anno;
+        st2 >> anno;
+        if (st2.status() != QDataStream::Ok) {
+            res["error"] = 2;
+            res["errorMessage"] = QCoreApplication::tr("stream is bad");
+            return res;
+        }
+        int numBlock = 0;
+        int numCharacter = 0;
+        QJsonArray numCharInBlock;
+        QJsonArray characters;
+        QVector<CharacterAnnotation> v;
+        foreach (BlockAnnotation const &block, anno.blocks) {
+            int cnt = 0;
+            foreach (CharacterAnnotation const &ch, block.characters) {
+                if (ch.text.isEmpty())
+                    continue;
+                cnt++;
+                characters.append(character2json(ch));
+                v.append(ch);
+            }
+            if (cnt > 0) {
+                numBlock++;
+                numCharacter += cnt;
+                numCharInBlock.append(cnt);
+            }
+        }
+        QJsonObject img;
+        img["numBlock"] = numBlock;
+        img["numCharacter"] = numCharacter;
+        img["numCharInBlock"] = numCharInBlock;
+        img["characters"] = characters;
+        images[baseName] = img;
+        if (m != nullptr)
+            (*m)[baseName] = v;
     }
     res["error"] = 0;
     res["images"] = images;
@@ -165,10 +160,10 @@ QJsonObject feedback(QMap<QString, QVector<CharacterAnnotation> > images, QMap<Q
             qreal area_ref = polyArea(character_ref.box);
             qreal intersected = polyArea(character.box.intersected(character_ref.box));
             qreal overlap_ratio = intersected / (area + area_ref - intersected);
-            if (overlap_ratio > ratio) {
+            if (overlap_ratio > 0.33) {
                 matchToRef[p.i] = p.j;
                 matchFromRef[p.j] = p.i;
-                if (character.text != character_ref.text) {
+                if (character.text != character_ref.text || overlap_ratio < ratio) {
                     error.append(character2json(character_ref));
                     error_ref.append(character2json(character));
                 }
@@ -231,14 +226,13 @@ int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
     app.setApplicationVersion("v0.0.1");
+    cin.setCodec("UTF-8");
     cout.setCodec("UTF-8");
 
     QCommandLineParser parser;
     parser.setApplicationDescription("Cross Validation");
     parser.addHelpOption();
     parser.addVersionOption();
-    parser.addPositionalArgument("package-1", QCoreApplication::translate("main", "The first package."));
-    parser.addPositionalArgument("package-2", QCoreApplication::translate("main", "The second package (if --single is not set)."));
 
     QCommandLineOption singleOption(QStringList() << "s" << "single",
             QCoreApplication::translate("main", "Only validate single package."));
@@ -253,23 +247,28 @@ int main(int argc, char *argv[])
     parser.process(app);
 
     const QStringList args = parser.positionalArguments();
-    // package-1 is args.at(0), package-2 is args.at(1)
 
     QJsonObject json;
-    if (parser.isSet(singleOption)) {
-        if (args.size() != 1) {
+    if (!args.isEmpty()) {
+        json["error"] = 1;
+        json["errorMessage"] = "invalid argument";
+    } else if (parser.isSet(singleOption)) {
+        QString line = cin.readLine();
+        if (line.isEmpty()) {
             json["error"] = 1;
-            json["errorMessage"] = "invalid argument";
+            json["errorMessage"] = "missing file";
         } else {
-            json = validateSingle(args.at(0));
+            json = validateSingle(line);
         }
     } else {
-        if (args.size() != 2 || !parser.isSet(ratioOption)) {
+        QString line1 = cin.readLine();
+        QString line2 = cin.readLine();
+        if (line1.isEmpty() || line2.isEmpty()) {
             json["error"] = 1;
-            json["errorMessage"] = "invalid argument";
+            json["errorMessage"] = "missing file";
         } else {
             qreal ratio = (qreal)parser.value(ratioOption).toDouble();
-            json = validateCross(args.at(0), args.at(1), ratio);
+            json = validateCross(line1, line2, ratio);
         }
     }
     QJsonDocument doc;
