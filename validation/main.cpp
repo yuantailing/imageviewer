@@ -45,20 +45,17 @@ QJsonObject validateSingle(QString b64str, QMap<QString, QVector<CharacterAnnota
             res["errorMessage"] = QCoreApplication::tr("stream is bad");
             return res;
         }
-        QDataStream st1(&fileContent, QIODevice::ReadOnly);
-        QByteArray annoArray;
-        st1 >> annoArray;
-        if (st1.status() != QDataStream::Ok) {
-            res["error"] = 2;
-            res["errorMessage"] = QCoreApplication::tr("stream is bad");
+        fileContent = qUncompress(fileContent);
+        if (fileContent.isEmpty()) {
+            res["error"] = 3;
+            res["errorMessage"] = QCoreApplication::tr("bytearray is bad");
             return res;
         }
-        annoArray = qUncompress(annoArray);
-        QDataStream st2(&annoArray, QIODevice::ReadOnly);
+        QDataStream st(&fileContent, QIODevice::ReadOnly);
         ImageAnnotation anno;
-        st2 >> anno;
-        if (st2.status() != QDataStream::Ok) {
-            res["error"] = 2;
+        st >> anno;
+        if (st.status() != QDataStream::Ok) {
+            res["error"] = 4;
             res["errorMessage"] = QCoreApplication::tr("stream is bad");
             return res;
         }
@@ -195,12 +192,12 @@ QJsonObject feedback(QMap<QString, QVector<CharacterAnnotation> > images, QMap<Q
     return res;
 }
 
-QJsonObject validateCross(QString fileName1, QString fileName2, qreal ratio) {
+QJsonObject validateCross(QString b64str1, QString b64str2, qreal ratio) {
     QJsonObject res;
     QMap<QString, QVector<CharacterAnnotation> > images1;
     QMap<QString, QVector<CharacterAnnotation> > images2;
-    QJsonObject res1 = validateSingle(fileName1, &images1);
-    QJsonObject res2 = validateSingle(fileName2, &images2);
+    QJsonObject res1 = validateSingle(b64str1, &images1);
+    QJsonObject res2 = validateSingle(b64str2, &images2);
     if (res1["error"] != 0) {
         res["error"] = res1["error"];
         res["errorMessage"] = res1["errorMessage"];

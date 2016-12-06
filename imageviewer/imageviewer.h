@@ -60,6 +60,7 @@ private slots:
     void open();
     void save();
     void exportPackage();
+    void unpack();
     void undo();
     void redo();
     void switchTool();
@@ -75,6 +76,7 @@ private:
     QAction *openAct;
     QAction *saveAct;
     QAction *exportPackageAct;
+    QAction *unpackAct;
     QAction *undoAct;
     QAction *redoAct;
     QAction *switchToolAct;
@@ -98,6 +100,7 @@ private:
     QWidget *centralWidget;
     QListWidget *listWidget;
     QLabel* statusLabel;
+    QString annotationSuffix;
     QDir imageFolder;
     QStringList imagesInFolder;
     QString imageFileName;

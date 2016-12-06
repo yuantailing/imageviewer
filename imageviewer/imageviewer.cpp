@@ -27,6 +27,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
     drawingLabel = false;
+    annotationSuffix = QString("stream");
     resetHistory();
 
     setWindowTitle(tr("Image Viewer"));
@@ -34,6 +35,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     this->setMouseTracking(true);
     centralWidget->setMouseTracking(true);
     this->setAcceptDrops(true);
+    this->setMinimumSize(480, 320);
     this->setWindowState(Qt::WindowMaximized);
 }
 
@@ -248,6 +250,9 @@ void ImageViewer::createActions() {
     exportPackageAct = new QAction(tr("&Export package"), this);
     connect(exportPackageAct, SIGNAL(triggered()), this, SLOT(exportPackage()));
 
+    unpackAct = new QAction(tr("&Unpack"), this);
+    connect(unpackAct, SIGNAL(triggered()), this, SLOT(unpack()));
+
     undoAct = new QAction(tr("&Undo"), this);
     undoAct->setShortcut(tr("Ctrl+Z"));
     connect(undoAct, SIGNAL(triggered()), this, SLOT(undo()));
@@ -282,6 +287,7 @@ void ImageViewer::createMenus() {
     fileMenu->addAction(openAct);
     fileMenu->addAction(saveAct);
     fileMenu->addAction(exportPackageAct);
+    fileMenu->addAction(unpackAct);
     \
     editMenu = new QMenu(tr("&Edit"), this);
     editMenu->addAction(undoAct);
@@ -330,31 +336,22 @@ void ImageViewer::loadFile(QString const &fileName) {
     if (file.open(QIODevice::ReadOnly)) {
         QDataStream stream(&file);
         QByteArray annoArray, historyArray;
-        stream >> annoArray;
-        annoArray = qUncompress(annoArray);
-        QDataStream::Status status1 = fromQByteArray(annoArray, anno);
-        stream >> historyArray;
-        historyArray = qUncompress(historyArray);
-        QDataStream::Status status2 = fromQByteArray(historyArray, history);
+        stream >> anno;
+        bool okAnno = stream.status() == QDataStream::Ok;
+        stream >> history;
+        bool okHistory = stream.status() == QDataStream::Ok;
         file.close();
-        if (status1 != QDataStream::Ok || status2 != QDataStream::Ok) {
+        if (!okHistory) {
             file.copy(file.fileName() + ".bak");
             QMessageBox::information(this, tr("Image Viewer"),
                                      tr("File is corrupted, data will be cleared: %1").arg(file.fileName()));
-            if (status1 != QDataStream::Ok) {
-                if (status2 == QDataStream::Ok && !history.isEmpty())
-                    anno = history.back();
-                else
-                    resetHistory();
-            }
-            if (status2 != QDataStream::Ok) {
-                history.clear();
-                history.append(ImageAnnotation());
-                ImageAnnotation loadedAnno = anno;
+            if (!okAnno) {
                 resetHistory();
-                anno = loadedAnno;
-                addHistoryPoint();
             }
+            ImageAnnotation loadedAnno = anno;
+            resetHistory();
+            anno = loadedAnno;
+            addHistoryPoint();
         }
     }
     updateBlockList();
@@ -461,7 +458,7 @@ void ImageViewer::inputStringToAnnotation(int index) {
 QString ImageViewer::annotationFileName(QString const &imageFileName) const {
     if (imageFileName.isEmpty())
         return QString();
-    return imageFolder.filePath(QFileInfo(imageFileName).completeBaseName() + ".array");
+    return imageFolder.filePath(QFileInfo(imageFileName).completeBaseName() + "." + annotationSuffix);
 }
 
 template <typename T>
@@ -480,7 +477,7 @@ QDataStream::Status ImageViewer::fromQByteArray(QByteArray &array, T &t) {
 }
 
 void ImageViewer::open() {
-    QString fileName = QFileDialog::getOpenFileName(this);
+    QString fileName = QFileDialog::getOpenFileName(this, QString(), QString(), "Images (*.jpg *.png)");
     if (!fileName.isEmpty()) {
         loadFile(fileName);
     }
@@ -496,14 +493,14 @@ void ImageViewer::save() {
         return;
     }
     QDataStream stream(&file);
-    stream << qCompress(toQByteArray(anno));
-    stream << qCompress(toQByteArray(history));
+    stream << anno;
+    stream << history;
     file.close();
 }
 
 void ImageViewer::exportPackage() {
     save();
-    QString fileName = QFileDialog::getSaveFileName(this, QString(), imageFolder.filePath("annotation.package"));
+    QString fileName = QFileDialog::getSaveFileName(this, QString(), imageFolder.filePath("annotation.pack"));
     if (!fileName.isEmpty()) {
         QFile file(fileName);
         QStringList exportList;
@@ -518,7 +515,7 @@ void ImageViewer::exportPackage() {
             if (f.open(QIODevice::ReadOnly)) {
                 QFileInfo fileInfo(f);
                 stream << fileInfo.completeBaseName();
-                stream << f.readAll();
+                stream << qCompress(f.readAll(), 9);
                 f.close();
                 exportList << fileInfo.fileName();
             }
@@ -531,6 +528,64 @@ void ImageViewer::exportPackage() {
         QMessageBox::information(this, tr("Image Viewer"), info);
     }
 }
+
+void ImageViewer::unpack() {
+    QString fileName = QFileDialog::getOpenFileName(this, QString(), imageFolder.path());
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        QDir dir(fileName);
+        dir.cdUp();
+        QFileInfo fileInfo(file);
+        QString folderName = "unpack-from-" + fileInfo.fileName();
+        dir.mkdir(folderName);
+        if (!dir.cd(folderName)) {
+            QMessageBox::information(this, tr("Image Viewer"),
+                                     tr("Cannot cd to %1.").arg(dir.filePath(folderName)));
+            return;
+        }
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::information(this, tr("Image Viewer"),
+                                     tr("Cannot load %1.").arg(file.fileName()));
+            return;
+        }
+        QDataStream stream(&file);
+        int cnt = 0;
+        while (!stream.atEnd()) {
+            QString baseName;
+            QByteArray fileContent;
+            stream >> baseName;
+            stream >> fileContent;
+            if (stream.status() != QDataStream::Ok) {
+                QMessageBox::information(this, tr("Image Viewer"),
+                                         tr("Stream is bad: %1.").arg(file.fileName()));
+                file.close();
+                return;
+            }
+            QString streamFileName = dir.filePath(baseName + "." + annotationSuffix);
+            QFile streamFile(streamFileName);
+            fileContent = qUncompress(fileContent);
+            if (fileContent.isEmpty()) {
+                QMessageBox::information(this, tr("Image Viewer"),
+                                         tr("Uncompress %1 failed.").arg(baseName));
+                file.close();
+                return;
+            }
+            if (!streamFile.open(QIODevice::WriteOnly)) {
+                QMessageBox::information(this, tr("Image Viewer"),
+                                         tr("Cannot write %1.").arg(streamFile.fileName()));
+                file.close();
+                return;
+            }
+            streamFile.write(fileContent);
+            streamFile.close();
+            cnt++;
+        }
+        file.close();
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Successfully unpacked %1 annotations to %2.").arg(cnt).arg(dir.path()));
+    }
+}
+
 
 void ImageViewer::undo() {
     if (drawingLabel)
