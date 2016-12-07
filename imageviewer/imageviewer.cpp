@@ -1,4 +1,6 @@
 #include <QtWidgets>
+#include <QJsonDocument>
+#include <QJsonArray>
 #include <QDebug>
 #include "imageviewer.h"
 
@@ -27,6 +29,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
     drawingLabel = false;
+    showingFeedbacks = true;
     annotationSuffix = QString("stream");
     resetHistory();
 
@@ -67,6 +70,28 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
     if (!listWidget->selectedItems().isEmpty())
         selectedBlock = listWidget->row(listWidget->selectedItems().first());
 
+    auto paintCharacter = [&](QPolygonF const &box, QString const &text, qreal polyOpacity, qreal charOpacity,
+            QColor penColor, QColor brushColor, QColor charColor, qreal penWidth) {
+        QPolygonF polyScreen;
+        foreach (QPointF p, box)
+            polyScreen.append(toScreenUV(p));
+
+        // 字符包围盒
+        painter.setOpacity(polyOpacity);
+        painter.setPen(QPen(penColor, penWidth));
+        painter.setBrush(QBrush(brushColor));
+        painter.drawPolygon(polyScreen);
+
+        // 打印文字
+        painter.setOpacity(charOpacity);
+        painter.setPen(QPen(charColor));
+        painter.setBrush(QBrush(charColor));
+        QRectF bounding = polyScreen.boundingRect();
+        qreal fontSize = qMax(qMin(bounding.width() / text.length(), bounding.height()) * 0.67, 5.0);
+        painter.setFont(QFont("Arial", fontSize, QFont::Bold));
+        painter.drawText(bounding, Qt::AlignCenter, text);
+    };
+
     if (!controlPressed || !shiftPressed)
         for (int i = 0; i < anno.blocks.size(); i++) {
             BlockAnnotation const &block(anno.blocks[i]);
@@ -89,26 +114,41 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
 
             // 绘制已标注的字符区域
             foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
-                QPolygonF polyScreen;
-                foreach (QPointF p, charAnno.box)
-                    polyScreen.append(toScreenUV(p));
-
-                // 字符包围盒
-                painter.setOpacity(polyOpacity);
-                painter.setPen(QPen(Qt::green));
-                painter.setBrush(QBrush(Qt::red));
-                painter.drawPolygon(polyScreen);
-
-                // 打印文字
-                painter.setOpacity(charOpacity);
-                painter.setPen(QPen(Qt::black));
-                painter.setBrush(QBrush(Qt::red));
-                QRectF bounding = polyScreen.boundingRect();
-                qreal fontSize = qMax(qMin(bounding.width() / charAnno.text.length(), bounding.height()) * 0.67, 5.0);
-                painter.setFont(QFont("Arial", fontSize, QFont::Bold));
-                painter.drawText(bounding, Qt::AlignCenter, charAnno.text);
+                paintCharacter(charAnno.box, charAnno.text, polyOpacity, charOpacity, Qt::green, Qt::red, Qt::black, 2.0);
             }
         }
+
+    if (showingFeedbacks && feedbacks.contains(imageBaseName)) {
+        QJsonObject obj = feedbacks[imageBaseName].toObject();
+        QJsonArray error = obj["error"].toArray();
+        QJsonArray miss = obj["miss"].toArray();
+        QJsonArray reduntant = obj["reduntant"].toArray();
+        auto paint = [&](QJsonArray const &array, qreal polyOpacity, qreal charOpacity,
+                QColor penColor, QColor brushColor, QColor charColor = Qt::black, qreal penWidth = 4.0) {
+            for (int i = 0; i < array.size(); i++) {
+                QJsonObject ch = array[i].toObject();
+                QJsonArray jbox = ch["box"].toArray();
+                QPolygonF box;
+                for (int j = 0; j < jbox.size(); j++) {
+                    QJsonArray xy = jbox[j].toArray();
+                    double x = xy[0].toDouble();
+                    double y = xy[1].toDouble();
+                    box.push_back(QPointF(x, y));
+                }
+                QString text = ch["text"].toString();
+                paintCharacter(box, text, polyOpacity, charOpacity, penColor, brushColor, charColor, penWidth);
+            }
+        };
+        paint(error, 1, 1, Qt::white, Qt::cyan);
+        paint(miss, 1, 1, Qt::white, Qt::red);
+        paint(reduntant, 1, 0, Qt::black, Qt::yellow);
+        QPolygonF errorSample(QRectF(toImageUV(QPoint(20, 60)), toImageUV(QPoint(100, 100))));
+        QPolygonF missSample(QRectF(toImageUV(QPoint(20, 110)), toImageUV(QPoint(100, 150))));
+        QPolygonF reduntantSample(QRectF(toImageUV(QPoint(20, 160)), toImageUV(QPoint(100, 200))));
+        paintCharacter(errorSample, "错标", 1, 1, Qt::white, Qt::cyan, Qt::black, 4.0);
+        paintCharacter(missSample, "漏标", 1, 1, Qt::white, Qt::red, Qt::black, 4.0);
+        paintCharacter(reduntantSample, "多标", 1, 1, Qt::black, Qt::yellow, Qt::black, 4.0);
+    }
 
     // 绘制Tips
     statusLabel->setText(anno.getTips());
@@ -243,6 +283,9 @@ void ImageViewer::createActions() {
     openAct->setShortcut(tr("Ctrl+O"));
     connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
 
+    loadFeedbacksAct = new QAction(tr("&Load feedbacks"), this);
+    connect(loadFeedbacksAct, SIGNAL(triggered()), this, SLOT(loadFeedbacks()));
+
     saveAct = new QAction(tr("&Save"), this);
     saveAct->setShortcut(tr("Ctrl+S"));
     connect(saveAct, SIGNAL(triggered()), this, SLOT(save()));
@@ -277,7 +320,11 @@ void ImageViewer::createActions() {
     zoomOutAct->setShortcut(tr("Ctrl+-"));
     connect(zoomOutAct, SIGNAL(triggered()), this, SLOT(zoomOut()));
 
-    resetLocationAct = new QAction(tr("&Reset Location \\& scale"), this);
+    showHideFeedbacksAct = new QAction(tr("Show / Hide &Feedbacks"), this);
+    showHideFeedbacksAct->setShortcut(tr("Ctrl+F"));
+    connect(showHideFeedbacksAct, SIGNAL(triggered()), this, SLOT(showHideFeedbacks()));
+
+    resetLocationAct = new QAction(tr("&Reset location / scale"), this);
     resetLocationAct->setShortcut(tr("Ctrl+0"));
     connect(resetLocationAct, SIGNAL(triggered()), this, SLOT(resetLocation()));
 }
@@ -285,6 +332,7 @@ void ImageViewer::createActions() {
 void ImageViewer::createMenus() {
     fileMenu = new QMenu(tr("&File"), this);
     fileMenu->addAction(openAct);
+    fileMenu->addAction(loadFeedbacksAct);
     fileMenu->addAction(saveAct);
     fileMenu->addAction(exportPackageAct);
     fileMenu->addAction(unpackAct);
@@ -298,6 +346,7 @@ void ImageViewer::createMenus() {
     viewMenu = new QMenu(tr("&View"), this);
     viewMenu->addAction(zoomInAct);
     viewMenu->addAction(zoomOutAct);
+    viewMenu->addAction(showHideFeedbacksAct);
     viewMenu->addAction(resetLocationAct);
 
     menuBar()->addMenu(fileMenu);
@@ -314,18 +363,21 @@ void ImageViewer::loadFile(QString const &fileName) {
     }
     save();
 
+    QString fileNameOld = imageFileName;
     QDir dir_old(imageFileName);
     bool flag_old = dir_old.cdUp();
-    QDir dir_new(fileName);
+    imageFileName = fileName;
+    imageBaseName = QFileInfo(imageFileName).baseName();
+    QDir dir_new(imageFileName);
     dir_new.cdUp();
-    if (flag_old == false || dir_old.absolutePath() != dir_new.absolutePath()) {
+    if (fileNameOld.isEmpty() || flag_old == false || dir_old.absolutePath() != dir_new.absolutePath()) {
         imageFolder = dir_new;
         QStringList filters;
         filters << "*.jpg" << "*.png" << "*.bmp" << "*.jpeg" << "*.gif";
         imagesInFolder = dir_new.entryList(filters, QDir::Files | QDir::Readable);
+        reloadFeedbacks();
     }
 
-    imageFileName = fileName;
     setWindowTitle(tr("[第%1/%2张] %3").arg(1 + imagesInFolder.indexOf(QFileInfo(imageFileName).fileName())).
                    arg(imagesInFolder.size()).arg(QFileInfo(imageFileName).fileName()));
     image = newImage;
@@ -481,6 +533,62 @@ void ImageViewer::open() {
     if (!fileName.isEmpty()) {
         loadFile(fileName);
     }
+}
+
+void ImageViewer::loadFeedbacks() {
+    if (imageFileName.isEmpty()) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("请先打开一张图片，再进行此操作"));
+        return;
+    }
+    QString fileName = QFileDialog::getOpenFileName(this, QString(), QString(), "JSON (*.json)");
+    QFile inFile(fileName);
+    if (!inFile.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot load %1.").arg(inFile.fileName()));
+        return;
+    }
+    QByteArray inArray = inFile.readAll();
+    inFile.close();
+    QJsonParseError inError;
+    QJsonDocument document = QJsonDocument::fromJson(inArray, &inError);
+    if (inError.error != QJsonParseError::NoError || !document.isObject()) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Json parse error: %1.\nFile: %2.").arg(inError.errorString()).arg(inFile.fileName()));
+        return;
+    }
+    QJsonObject obj = document.object();
+    QFile outFile(imageFolder.filePath("feedback.json"));
+    if (!outFile.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot write %1.").arg(outFile.fileName()));
+        return;
+    }
+    outFile.write(document.toJson(QJsonDocument::Compact));
+    outFile.close();
+    reloadFeedbacks();
+    QMessageBox::information(this, tr("Image Viewer"),
+                                   tr("成功导入这组feedbacks！下次会自动加载，无需重复导入"));
+}
+
+void ImageViewer::reloadFeedbacks() {
+    if (imageFileName.isEmpty())
+        return;
+    QFile inFile(imageFolder.filePath("feedback.json"));
+    if (!inFile.open(QIODevice::ReadOnly)) {
+        return;
+    }
+    QByteArray inArray = inFile.readAll();
+    inFile.close();
+    QJsonParseError inError;
+    QJsonDocument document = QJsonDocument::fromJson(inArray, &inError);
+    if (inError.error != QJsonParseError::NoError || !document.isObject()) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Json parse error: %1.\nFile: %2.").arg(inError.errorString()).arg(inFile.fileName()));
+        return;
+    }
+    feedbacks = document.object();
+    update();
 }
 
 void ImageViewer::save() {
@@ -663,6 +771,11 @@ void ImageViewer::zoomOut() {
 
 void ImageViewer::setLocation(QPoint loc) {
     imageLeftTop = loc;
+    update();
+}
+
+void ImageViewer::showHideFeedbacks() {
+    showingFeedbacks = !showingFeedbacks;
     update();
 }
 

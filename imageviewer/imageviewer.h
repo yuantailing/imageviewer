@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QListWidget>
 #include <QDir>
+#include <QJsonObject>
 #include "imageannotation.h"
 
 QT_BEGIN_NAMESPACE
@@ -58,6 +59,8 @@ private:
 
 private slots:
     void open();
+    void loadFeedbacks();
+    void reloadFeedbacks();
     void save();
     void exportPackage();
     void unpack();
@@ -67,6 +70,7 @@ private slots:
     void deleteBlock();
     void zoomIn();
     void zoomOut();
+    void showHideFeedbacks();
     void setLocation(QPoint loc);
     void resetLocation();
     void onListWidgetSelect();
@@ -74,6 +78,7 @@ private slots:
 
 private:
     QAction *openAct;
+    QAction *loadFeedbacksAct;
     QAction *saveAct;
     QAction *exportPackageAct;
     QAction *unpackAct;
@@ -83,6 +88,7 @@ private:
     QAction *deleteBlockAct;
     QAction *zoomInAct;
     QAction *zoomOutAct;
+    QAction *showHideFeedbacksAct;
     QAction *resetLocationAct;
     QMenu *fileMenu;
     QMenu *editMenu;
@@ -96,6 +102,7 @@ private:
 
     bool draggingImage;
     bool drawingLabel;
+    bool showingFeedbacks;
 
     QWidget *centralWidget;
     QListWidget *listWidget;
@@ -104,10 +111,12 @@ private:
     QDir imageFolder;
     QStringList imagesInFolder;
     QString imageFileName;
+    QString imageBaseName;
     QImage image;
     QImage scaledImage;
     QPoint imageLeftTop;
     qreal scaleFactor;
+    QJsonObject feedbacks;
 
     ImageAnnotation anno;
     QVector<ImageAnnotation> history;
