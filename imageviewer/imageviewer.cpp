@@ -283,8 +283,8 @@ void ImageViewer::createActions() {
     openAct->setShortcut(tr("Ctrl+O"));
     connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
 
-    loadFeedbacksAct = new QAction(tr("&Load feedbacks"), this);
-    connect(loadFeedbacksAct, SIGNAL(triggered()), this, SLOT(loadFeedbacks()));
+    importFeedbacksAct = new QAction(tr("&Import feedbacks"), this);
+    connect(importFeedbacksAct, SIGNAL(triggered()), this, SLOT(importFeedbacks()));
 
     saveAct = new QAction(tr("&Save"), this);
     saveAct->setShortcut(tr("Ctrl+S"));
@@ -332,7 +332,7 @@ void ImageViewer::createActions() {
 void ImageViewer::createMenus() {
     fileMenu = new QMenu(tr("&File"), this);
     fileMenu->addAction(openAct);
-    fileMenu->addAction(loadFeedbacksAct);
+    fileMenu->addAction(importFeedbacksAct);
     fileMenu->addAction(saveAct);
     fileMenu->addAction(exportPackageAct);
     fileMenu->addAction(unpackAct);
@@ -535,7 +535,7 @@ void ImageViewer::open() {
     }
 }
 
-void ImageViewer::loadFeedbacks() {
+void ImageViewer::importFeedbacks() {
     if (imageFileName.isEmpty()) {
         QMessageBox::information(this, tr("Image Viewer"),
                                  tr("请先打开一张图片，再进行此操作"));
@@ -566,6 +566,7 @@ void ImageViewer::loadFeedbacks() {
     }
     outFile.write(document.toJson(QJsonDocument::Compact));
     outFile.close();
+    showingFeedbacks = true;
     reloadFeedbacks();
     QMessageBox::information(this, tr("Image Viewer"),
                                    tr("成功导入这组feedbacks！下次会自动加载，无需重复导入"));
@@ -575,7 +576,11 @@ void ImageViewer::reloadFeedbacks() {
     if (imageFileName.isEmpty())
         return;
     QFile inFile(imageFolder.filePath("feedback.json"));
+    if (!inFile.exists())
+        return;
     if (!inFile.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot load %1.").arg(inFile.fileName()));
         return;
     }
     QByteArray inArray = inFile.readAll();
@@ -620,13 +625,18 @@ void ImageViewer::exportPackage() {
         QDataStream stream(&file);
         for (QStringList::Iterator it = imagesInFolder.begin(); it != imagesInFolder.end(); it++) {
             QFile f(annotationFileName(imageFolder.filePath(*it)));
-            if (f.open(QIODevice::ReadOnly)) {
-                QFileInfo fileInfo(f);
-                stream << fileInfo.completeBaseName();
-                stream << qCompress(f.readAll(), 9);
-                f.close();
-                exportList << fileInfo.fileName();
+            if (!f.exists())
+                continue;
+            if (!f.open(QIODevice::ReadOnly)) {
+                QMessageBox::information(this, tr("Image Viewer"),
+                                         tr("Cannot load %1.").arg(f.fileName()));
+                return;
             }
+            QFileInfo fileInfo(f);
+            stream << fileInfo.completeBaseName();
+            stream << qCompress(f.readAll(), 9);
+            f.close();
+            exportList << fileInfo.fileName();
         }
         file.close();
         QString info = tr("导出了 %1 张图片的标注：").arg(exportList.size());

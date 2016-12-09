@@ -59,7 +59,7 @@ private:
 
 private slots:
     void open();
-    void loadFeedbacks();
+    void importFeedbacks();
     void reloadFeedbacks();
     void save();
     void exportPackage();
@@ -78,7 +78,7 @@ private slots:
 
 private:
     QAction *openAct;
-    QAction *loadFeedbacksAct;
+    QAction *importFeedbacksAct;
     QAction *saveAct;
     QAction *exportPackageAct;
     QAction *unpackAct;

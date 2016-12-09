@@ -62,7 +62,6 @@ QJsonObject validateSingle(QString b64str, QMap<QString, QVector<CharacterAnnota
         int numBlock = 0;
         int numCharacter = 0;
         QJsonArray numCharInBlock;
-        QJsonArray characters;
         QVector<CharacterAnnotation> v;
         foreach (BlockAnnotation const &block, anno.blocks) {
             int cnt = 0;
@@ -70,7 +69,6 @@ QJsonObject validateSingle(QString b64str, QMap<QString, QVector<CharacterAnnota
                 if (ch.text.isEmpty())
                     continue;
                 cnt++;
-                characters.append(character2json(ch));
                 v.append(ch);
             }
             if (cnt > 0) {
@@ -83,7 +81,6 @@ QJsonObject validateSingle(QString b64str, QMap<QString, QVector<CharacterAnnota
         img["numBlock"] = numBlock;
         img["numCharacter"] = numCharacter;
         img["numCharInBlock"] = numCharInBlock;
-        img["characters"] = characters;
         images[baseName] = img;
         if (m != nullptr)
             (*m)[baseName] = v;
@@ -157,7 +154,7 @@ QJsonObject feedback(QMap<QString, QVector<CharacterAnnotation> > images, QMap<Q
             qreal area_ref = polyArea(character_ref.box);
             qreal intersected = polyArea(character.box.intersected(character_ref.box));
             qreal overlap_ratio = intersected / (area + area_ref - intersected);
-            if (overlap_ratio > 0.33) {
+            if (overlap_ratio >= 0.20) {
                 matchToRef[p.i] = p.j;
                 matchFromRef[p.j] = p.i;
                 if (character.text != character_ref.text || overlap_ratio < ratio) {
@@ -208,14 +205,12 @@ QJsonObject validateCross(QString b64str1, QString b64str2, qreal ratio) {
         res["errorMessage"] = res2["errorMessage"];
         return res;
     }
-
     res["error"] = 0;
     res["images1"] = res1["images"].toObject();
     res["images2"] = res2["images"].toObject();
     QJsonObject feed = feedback(images1, images2, ratio);
     res["feedback1"] = feed["feedback"];
     res["feedback2"] = feed["feedbackRef"];
-
     return res;
 }
 
