@@ -253,14 +253,19 @@ int main(int argc, char *argv[])
             json = validateSingle(line);
         }
     } else {
-        QString line1 = cin.readLine();
-        QString line2 = cin.readLine();
-        if (line1.isEmpty() || line2.isEmpty()) {
+        if (!parser.isSet(ratioOption)) {
             json["error"] = 1;
-            json["errorMessage"] = "missing file";
+            json["errorMessage"] = "missing option -r";
         } else {
-            qreal ratio = (qreal)parser.value(ratioOption).toDouble();
-            json = validateCross(line1, line2, ratio);
+            QString line1 = cin.readLine();
+            QString line2 = cin.readLine();
+            if (line1.isEmpty() || line2.isEmpty()) {
+                json["error"] = 1;
+                json["errorMessage"] = "missing file";
+            } else {
+                qreal ratio = (qreal)parser.value(ratioOption).toDouble();
+                json = validateCross(line1, line2, ratio);
+            }
         }
     }
     QJsonDocument doc;
