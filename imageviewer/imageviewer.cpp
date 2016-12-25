@@ -14,7 +14,7 @@ ImageViewer::ImageViewer(QWidget *parent)
 
     centralWidget = new QWidget(this);
     centralWidget->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
-    listWidget = new QSoftSelectListWidget(centralWidget);
+    listWidget = new QListWidget(centralWidget);
     listWidget->setFocusPolicy(Qt::NoFocus);
     statusLabel = new QLabel(this);
     statusBar()->addWidget(statusLabel);
@@ -118,7 +118,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
             }
         }
 
-    if (showingFeedbacks && feedbacks.contains(imageBaseName)) {
+    if (showingFeedbacks && (!controlPressed || !shiftPressed) && feedbacks.contains(imageBaseName)) {
         QJsonObject obj = feedbacks[imageBaseName].toObject();
         QJsonArray error = obj["error"].toArray();
         QJsonArray miss = obj["miss"].toArray();
@@ -150,6 +150,20 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
         paintCharacter(reduntantSample, "多标", 1, 1, Qt::black, Qt::yellow, Qt::black, 4.0);
     }
 
+    // 绘制用户关注的焦点（上一次鼠标点击位置）
+    if (!controlPressed || !shiftPressed) {
+        if ((anno.focusPoint - QPointF(0, 0)).manhattanLength() > 0.001) {
+            painter.setOpacity(0.8);
+            painter.setPen(QPen(Qt::red));
+            QPointF foc = toScreenUV(anno.focusPoint);
+            qreal len = 5.0;
+            QLineF lineH = QLineF(foc + QPointF(-len, 0), foc + QPointF(len, 0));
+            QLineF lineV = QLineF(foc + QPointF(0, -len), foc + QPointF(0, len));
+            painter.drawLine(lineH);
+            painter.drawLine(lineV);
+        }
+    }
+
     // 绘制Tips
     statusLabel->setText(anno.getTips());
 
@@ -165,8 +179,7 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         spacePressed = true;
     } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = true;
-        anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
-        update();
+        updatePendingAnnotation();
     } else if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         bool annoChanged = anno.onEnterPressed();
         if (annoChanged) {
@@ -197,8 +210,7 @@ void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
         spacePressed = false;
     } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = false;
-        anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
-        update();
+        updatePendingAnnotation();
     }
     QMainWindow::keyReleaseEvent(event);
 }
@@ -221,7 +233,7 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
             draggingImage = true;
         } else {
             drawingLabel = true;
-            anno.onStartPoint(toImageUV(event->pos()), shiftPressed);
+            anno.onStartPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
             update();
         }
         mouseLastPos = event->pos();
@@ -233,8 +245,7 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
     if (draggingImage) {
         setLocation(imageLeftTop + event->pos() - mouseLastPos);
     } else {
-        anno.onPendingPoint(toImageUV(event->pos()), shiftPressed);
-        update();
+        updatePendingAnnotation();
     }
     mouseLastPos = event->pos();
     QMainWindow::mouseMoveEvent(event);
@@ -245,10 +256,14 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
         if (draggingImage) {
             // do nothing
         } else {
-            bool weak = anno.onEndPoint(toImageUV(event->pos()), shiftPressed);
-            addHistoryPoint(weak);
-            updateBlockList();
-            update();
+            int status = anno.onEndPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
+            if (status == 2) {
+                // do nothing
+            } else {
+                addHistoryPoint(status == 1); // status: 0 normal, 1 weak
+                updateBlockList();
+                update();
+            }
         }
         if (event->button() == Qt::LeftButton) {
             mousePressed = false;
@@ -312,16 +327,16 @@ void ImageViewer::createActions() {
     deleteBlockAct->setShortcut(tr("Delete"));
     connect(deleteBlockAct, SIGNAL(triggered()), this, SLOT(deleteBlock()));
 
-    zoomInAct = new QAction(tr("Zoom &In (25%)"), this);
+    zoomInAct = new QAction(tr("Zoom &In"), this);
     zoomInAct->setShortcuts({tr("Ctrl++"), tr("Ctrl+=")});
     connect(zoomInAct, SIGNAL(triggered()), this, SLOT(zoomIn()));
 
-    zoomOutAct = new QAction(tr("Zoom &Out (25%)"), this);
+    zoomOutAct = new QAction(tr("Zoom &Out"), this);
     zoomOutAct->setShortcut(tr("Ctrl+-"));
     connect(zoomOutAct, SIGNAL(triggered()), this, SLOT(zoomOut()));
 
     showHideFeedbacksAct = new QAction(tr("Show / Hide &Feedbacks"), this);
-    showHideFeedbacksAct->setShortcut(tr("Ctrl+F"));
+    showHideFeedbacksAct->setShortcut(tr("F2"));
     connect(showHideFeedbacksAct, SIGNAL(triggered()), this, SLOT(showHideFeedbacks()));
 
     resetLocationAct = new QAction(tr("&Reset location / scale"), this);
@@ -476,6 +491,11 @@ QPolygonF ImageViewer::toScreenPoly(QPolygonF const &poly) const {
     return res;
 }
 
+void ImageViewer::updatePendingAnnotation() {
+    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), scaleFactor, shiftPressed);
+    update();
+}
+
 void ImageViewer::inputStringToAnnotation(int index) {
     Q_ASSERT(0 <= index && index < anno.blocks.size());
     int wordNeeded = anno.numWordNeeded(index);
@@ -612,6 +632,11 @@ void ImageViewer::save() {
 }
 
 void ImageViewer::exportPackage() {
+    if (imageFileName.isEmpty()) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("请先打开一张图片，再进行此操作"));
+        return;
+    }
     save();
     QString fileName = QFileDialog::getSaveFileName(this, QString(), imageFolder.filePath("annotation.pack"));
     if (!fileName.isEmpty()) {
@@ -719,7 +744,7 @@ void ImageViewer::undo() {
     redoHistory.push_back(history.back());
     history.pop_back();
     anno = history.back();
-    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
+    updatePendingAnnotation();
     updateBlockList();
     update();
 }
@@ -732,7 +757,7 @@ void ImageViewer::redo() {
     history.push_back(redoHistory.back());
     redoHistory.pop_back();
     anno = history.back();
-    anno.onPendingPoint(toImageUV(mapFromGlobal(cursor().pos())), shiftPressed);
+    updatePendingAnnotation();
     updateBlockList();
     update();
 }

@@ -48,6 +48,7 @@ private:
     QPointF toImageUV(QPoint screenUV) const;
     QPointF toScreenUV(QPointF imageUV) const;
     QPolygonF toScreenPoly(QPolygonF const &poly) const;
+    void updatePendingAnnotation();
     void inputStringToAnnotation(int index);
 
     QString annotationFileName(QString const &imageFileName) const;

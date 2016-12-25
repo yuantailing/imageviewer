@@ -14,17 +14,59 @@ PerspectiveHelper::PerspectiveHelper() {
     stroking = false;
     singleCharacter = false;
     textDirection = DIRECTION_AUTO;
+    lastPointInvalid = false;
 }
 
-void PerspectiveHelper::onStartPoint(QPointF p, bool regular, BlockAnnotation *block) {
-    setPoint(p, regular, block, false);
+void PerspectiveHelper::onStartPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block) {
+    setPoint(p, scale, regular, block, false);
 }
 
-void PerspectiveHelper::onPendingPoint(QPointF p, bool regular, BlockAnnotation *block) {
-    setPoint(p, regular, block, true);
+void PerspectiveHelper::onPendingPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block) {
+    setPoint(p, scale, regular, block, true);
 }
 
-void PerspectiveHelper::setPoint(QPointF p, bool regular, BlockAnnotation *block, bool pending) {
+int PerspectiveHelper::onEndPoint(QPointF, qreal, bool, BlockAnnotation *) {
+    if (lastPointInvalid)
+        return 2;
+    if (stroking)
+        return 1;
+    return 0;
+}
+
+void PerspectiveHelper::onSwitchTool(BlockAnnotation *) {
+    toolSwitched = !toolSwitched;
+}
+
+bool PerspectiveHelper::onEnterPressed(BlockAnnotation *block) {
+    if (numPoint < 4)
+        return false;
+    if (stroking) {
+        onStartPoint(stroke.p2(), 1.0, false, block);
+        onEndPoint(stroke.p2(), 1.0, false, block);
+    }
+    if (block->characters.size() > 0)
+        return false;
+    singleCharacter = true;
+    addNewCharacterBoxToBlock(poly(), block);
+    numPoint = 0;
+    return true;
+}
+
+void PerspectiveHelper::setPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block, bool pending) {
+    if (!pending)
+        lastPointInvalid = true;
+    if (numPoint > 0 && numPoint < 4) {
+        qreal accepted_distance = 15.001 / scale;
+        if ((p - points[numPoint - 1]).manhattanLength() < accepted_distance)
+        return;
+    }
+    if (numPoint == 4 && stroking) {
+        qreal accepted_distance = 6.001 / scale;
+        if ((p - stroke.p1()).manhattanLength() < accepted_distance)
+        return;
+    }
+    if (!pending)
+        lastPointInvalid = false;
     if (numPoint == 0) {
         points[0] = points[1] = points[2] = points[3] = p;
         if (!pending)
@@ -80,25 +122,6 @@ void PerspectiveHelper::setPoint(QPointF p, bool regular, BlockAnnotation *block
             }
         }
     }
-}
-
-void PerspectiveHelper::onSwitchTool(BlockAnnotation *) {
-    toolSwitched = !toolSwitched;
-}
-
-bool PerspectiveHelper::onEnterPressed(BlockAnnotation *block) {
-    if (numPoint < 4)
-        return false;
-    if (stroking) {
-        onStartPoint(stroke.p2(), false, block);
-        onEndPoint(stroke.p2(), false, block);
-    }
-    if (block->characters.size() > 0)
-        return false;
-    singleCharacter = true;
-    addNewCharacterBoxToBlock(poly(), block);
-    numPoint = 0;
-    return true;
 }
 
 QVector<QPolygonF> PerspectiveHelper::getHelperPoly() const {
@@ -317,6 +340,7 @@ QDataStream &operator <<(QDataStream &stream, ImageAnnotation const &anno) {
     QDataStream::Version streamVersion = static_cast<QDataStream::Version>(stream.version());
     stream.setVersion(QDataStream::Qt_5_2);
     stream << anno.blocks;
+    stream << anno.focusPoint;
     stream.setVersion(streamVersion);
     return stream;
 }
@@ -324,6 +348,14 @@ QDataStream &operator <<(QDataStream &stream, ImageAnnotation const &anno) {
 QDataStream &operator >>(QDataStream &stream, ImageAnnotation &anno) {
     quint32 version;
     stream >> version;
+    if (version == 0x1000 && anno.VERSION == 0x1001) {
+        QDataStream::Version streamVersion = static_cast<QDataStream::Version>(stream.version());
+        stream.setVersion(QDataStream::Qt_5_2);
+        stream >> anno.blocks;
+        anno.focusPoint = QPointF(0, 0);
+        stream.setVersion(streamVersion);
+        return stream;
+    }
     if (version != (quint32)anno.VERSION) {
         stream.setStatus(QDataStream::ReadCorruptData);
         return stream;
@@ -331,6 +363,7 @@ QDataStream &operator >>(QDataStream &stream, ImageAnnotation &anno) {
     QDataStream::Version streamVersion = static_cast<QDataStream::Version>(stream.version());
     stream.setVersion(QDataStream::Qt_5_2);
     stream >> anno.blocks;
+    stream >> anno.focusPoint;
     stream.setVersion(streamVersion);
     return stream;
 }

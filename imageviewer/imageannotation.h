@@ -30,14 +30,17 @@ public:
     // 自动检测框选文字方向是否与base同向 / 强制与base同向 / 强制与base垂直
     enum TextDirection { DIRECTION_AUTO, DIRECTION_BY_BASE, DIRECTION_TO_BASE } textDirection;
 
+public: // Do not serialize them
+    bool lastPointInvalid;
+
 public:
     PerspectiveHelper();
-    void onStartPoint(QPointF p, bool regular, BlockAnnotation *block);
-    void onPendingPoint(QPointF p, bool regular, BlockAnnotation *block);
-    bool onEndPoint(QPointF, bool, BlockAnnotation *) { return stroking; }
+    void onStartPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block);
+    void onPendingPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block);
+    int onEndPoint(QPointF, qreal, bool, BlockAnnotation *);
     void onSwitchTool(BlockAnnotation *block);
     bool onEnterPressed(BlockAnnotation *block);
-    void setPoint(QPointF p, bool regular, BlockAnnotation *block, bool pending);
+    void setPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block, bool pending);
     QVector<QPolygonF> getHelperPoly() const;
     QVector<QPolygonF> getPendingCharacterPoly() const;
     QString getTips() const;
@@ -61,19 +64,19 @@ public:
         helperType = PERSPECTIVE_HELPER;
     }
 
-    void onStartPoint(QPointF p, bool regular) {
+    void onStartPoint(QPointF p, qreal scale, bool regular) {
         if (helperType == PERSPECTIVE_HELPER)
-            perspectiveHelper.onStartPoint(p, regular, this);
+            perspectiveHelper.onStartPoint(p, scale, regular, this);
     }
 
-    void onPendingPoint(QPointF p, bool regular) {
+    void onPendingPoint(QPointF p, qreal scale, bool regular) {
         if (helperType == PERSPECTIVE_HELPER)
-            perspectiveHelper.onPendingPoint(p, regular, this);
+            perspectiveHelper.onPendingPoint(p, scale, regular, this);
     }
 
-    bool onEndPoint(QPointF p, bool regular) {
+    int onEndPoint(QPointF p, qreal scale, bool regular) {
         if (helperType == PERSPECTIVE_HELPER)
-            return perspectiveHelper.onEndPoint(p, regular, this);
+            return perspectiveHelper.onEndPoint(p, scale, regular, this);
         return false;
     }
 
@@ -122,29 +125,32 @@ public:
 class ImageAnnotation {
 public:
     QVector<BlockAnnotation> blocks;
-    enum { VERSION = 0x1000 };
+    QPointF focusPoint;
+    enum { VERSION = 0x1001 };
 
 public:
     ImageAnnotation() {
+        focusPoint = QPointF(0, 0);
     }
 
     friend QDataStream &operator <<(QDataStream &stream, ImageAnnotation const &anno);
     friend QDataStream &operator >>(QDataStream &stream, ImageAnnotation &anno);
 
-    void onStartPoint(QPointF p, bool regular) {
+    void onStartPoint(QPointF p, qreal scale, bool regular) {
         Q_ASSERT(!blocks.isEmpty());
-        blocks.last().onStartPoint(p, regular);
+        blocks.last().onStartPoint(p, scale, regular);
+        focusPoint = p;
     }
 
-    void onPendingPoint(QPointF p, bool regular) {
+    void onPendingPoint(QPointF p, qreal scale, bool regular) {
         Q_ASSERT(!blocks.isEmpty());
-        blocks.last().onPendingPoint(p, regular);
+        blocks.last().onPendingPoint(p, scale, regular);
     }
 
-    // 返回值是本次鼠标点击操作是否是weak history，弱历史会被之后的历史覆盖
-    bool onEndPoint(QPointF p, bool regular) {
+    // 返回值：0一般操作；1本次鼠标点击操作是否是weak history，弱历史会被之后的历史覆盖；2无效点
+    int onEndPoint(QPointF p, qreal scale, bool regular) {
         Q_ASSERT(!blocks.isEmpty());
-        return blocks.last().onEndPoint(p, regular);
+        return blocks.last().onEndPoint(p, scale, regular);
     }
 
     void onSwitchTool() {
