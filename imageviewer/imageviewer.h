@@ -43,7 +43,7 @@ private:
     void updateScaledImage();
     void resetLocation(QSize size);
     void resetHistory();
-    void addHistoryPoint(bool weak = false);
+    void addHistoryPoint(int flag = 0); // 0: strong history; 1: week history; 2: replace last history
     void updateBlockList();
     QPointF toImageUV(QPoint screenUV) const;
     QPointF toScreenUV(QPointF imageUV) const;
@@ -52,6 +52,7 @@ private:
     void inputStringToAnnotation(int index);
 
     QString annotationFileName(QString const &imageFileName) const;
+    QPointF *lastPerspectiveHelperPoints();
 
     template <typename T>
     static QByteArray toQByteArray(T const &t);
@@ -123,6 +124,9 @@ private:
     QVector<ImageAnnotation> history;
     QVector<ImageAnnotation> redoHistory;
     bool keepHistoryOnUndo;
+
+    bool changingPerspectiveHelper;
+    int selectedPerspectiveHelperIndex;
 };
 
 class QSoftSelectListWidget: public QListWidget {

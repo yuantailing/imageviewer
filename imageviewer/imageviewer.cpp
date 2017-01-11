@@ -32,6 +32,8 @@ ImageViewer::ImageViewer(QWidget *parent)
     showingFeedbacks = true;
     annotationSuffix = QString("stream");
     resetHistory();
+    changingPerspectiveHelper = false;
+    selectedPerspectiveHelperIndex = -1;
 
     setWindowTitle(tr("Image Viewer"));
     setCentralWidget(centralWidget);
@@ -171,6 +173,18 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
         }
     }
 
+    // 绘制用户选中的编辑点
+    if (selectedPerspectiveHelperIndex >= 0) {
+        QPointF *points = lastPerspectiveHelperPoints();
+        if (points) {
+            QPointF p = points[selectedPerspectiveHelperIndex];
+            p = toScreenUV(p);
+            painter.setOpacity(0.8);
+            painter.setPen(QPen(Qt::red));
+            painter.drawEllipse(p, 6.0, 6.0);
+        }
+    }
+
     // 绘制Tips
     statusLabel->setText(anno.getTips());
 
@@ -238,6 +252,8 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
         mousePressed = true;
         if (controlPressed || spacePressed) {
             draggingImage = true;
+        } else if (selectedPerspectiveHelperIndex >= 0) {
+            changingPerspectiveHelper = true;
         } else {
             drawingLabel = true;
             anno.onStartPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
@@ -252,6 +268,26 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
     if (draggingImage) {
         setLocation(imageLeftTop + event->pos() - mouseLastPos);
     } else {
+        if (changingPerspectiveHelper) {
+            Q_ASSERT(selectedPerspectiveHelperIndex >= 0);
+            QPointF *points = lastPerspectiveHelperPoints();
+            if (points) {
+                points[selectedPerspectiveHelperIndex] = toImageUV(event->pos());
+            }
+        } else {
+            qDebug() << '-';
+            selectedPerspectiveHelperIndex = -1;
+            QPointF *points = lastPerspectiveHelperPoints();
+            if (points) {
+                for (int i = 0; i < 4; i++) {
+                    QPointF delta = event->pos() - toScreenUV(points[i]);
+                    if (QPointF::dotProduct(delta, delta) < 49.001) {
+                        selectedPerspectiveHelperIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
         updatePendingAnnotation();
     }
     mouseLastPos = event->pos();
@@ -262,21 +298,23 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
         if (draggingImage) {
             // do nothing
+        } else if (changingPerspectiveHelper) {
+            addHistoryPoint(2); // replace last history
+            update();
         } else {
             int status = anno.onEndPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
             if (status == 2) {
                 // do nothing
             } else {
-                addHistoryPoint(status == 1); // status: 0 normal, 1 weak
+                addHistoryPoint(status == 1 ? 1 : 0); // status: 0 normal, 1 weak
                 updateBlockList();
                 update();
             }
         }
-        if (event->button() == Qt::LeftButton) {
-            mousePressed = false;
-            draggingImage = false;
-            drawingLabel = false;
-        }
+        mousePressed = false;
+        draggingImage = false;
+        drawingLabel = false;
+        changingPerspectiveHelper = false;
     }
     QMainWindow::mouseReleaseEvent(event);
 }
@@ -451,11 +489,15 @@ void ImageViewer::resetHistory() {
     keepHistoryOnUndo = false;
 }
 
-void ImageViewer::addHistoryPoint(bool weak) {
-    if (weak) {
+void ImageViewer::addHistoryPoint(int flag) {
+    if (flag == 1) {
         keepHistoryOnUndo = true;
         return;
-    } else {
+    } else if (flag == 2) {
+        if (!history.isEmpty())
+            history.pop_back();
+        keepHistoryOnUndo = false;
+    } else { // flag == 0
         keepHistoryOnUndo = false;
     }
     redoHistory.clear();
@@ -538,6 +580,17 @@ QString ImageViewer::annotationFileName(QString const &imageFileName) const {
     if (imageFileName.isEmpty())
         return QString();
     return imageFolder.filePath(QFileInfo(imageFileName).completeBaseName() + "." + annotationSuffix);
+}
+
+QPointF *ImageViewer::lastPerspectiveHelperPoints() {
+    if (anno.blocks.size() > 0 &&
+            anno.blocks.last().helperType == BlockAnnotation::PERSPECTIVE_HELPER &&
+            anno.blocks.last().perspectiveHelper.numPoint == 4 &&
+            anno.blocks.last().perspectiveHelper.stroking == false &&
+            anno.blocks.last().characters.size() == 0) {
+        return anno.blocks.last().perspectiveHelper.points;
+    }
+    return nullptr;
 }
 
 template <typename T>
@@ -771,7 +824,7 @@ void ImageViewer::redo() {
 
 void ImageViewer::switchTool() {
     anno.onSwitchTool();
-    addHistoryPoint(true);
+    addHistoryPoint(1);
     update();
 }
 
