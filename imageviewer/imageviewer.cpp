@@ -71,7 +71,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
         selectedBlock = listWidget->row(listWidget->selectedItems().first());
 
     auto paintCharacter = [&](QPolygonF const &box, QString const &text, qreal polyOpacity, qreal charOpacity,
-            QColor penColor, QColor brushColor, QColor charColor, qreal penWidth) {
+            QColor penColor, QColor/* brushColor*/, QColor charColor, qreal penWidth) {
         QPolygonF polyScreen;
         foreach (QPointF p, box)
             polyScreen.append(toScreenUV(p));
@@ -79,36 +79,43 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
         // 字符包围盒
         painter.setOpacity(polyOpacity);
         painter.setPen(QPen(penColor, penWidth));
-        painter.setBrush(QBrush(brushColor));
+        painter.setBrush(Qt::NoBrush);
         painter.drawPolygon(polyScreen);
 
         // 打印文字
-        painter.setOpacity(charOpacity);
-        painter.setPen(QPen(charColor));
-        painter.setBrush(QBrush(charColor));
-        QRectF bounding = polyScreen.boundingRect();
-        qreal fontSize = qMax(qMin(bounding.width() / text.length(), bounding.height()) * 0.67, 5.0);
-        painter.setFont(QFont("Arial", fontSize, QFont::Bold));
-        painter.drawText(bounding, Qt::AlignCenter, text);
+        if (!text.isEmpty()) {
+            painter.setOpacity(0.2);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QBrush(Qt::yellow));
+            painter.drawPolygon(polyScreen);
+
+            painter.setOpacity(charOpacity);
+            painter.setPen(QPen(charColor));
+            painter.setBrush(Qt::NoBrush);
+            QRectF bounding = polyScreen.boundingRect();
+            qreal fontSize = qMax(qMin(bounding.width() / text.length(), bounding.height()) * 0.67, 5.0);
+            painter.setFont(QFont("Arial", fontSize, QFont::Bold));
+            painter.drawText(bounding, Qt::AlignCenter, text);
+        }
     };
 
     if (!controlPressed || !shiftPressed)
         for (int i = 0; i < anno.blocks.size(); i++) {
             BlockAnnotation const &block(anno.blocks[i]);
-            qreal polyOpacity = i == selectedBlock ? 0.5 : 0.3;
-            qreal charOpacity = i == selectedBlock ? 1.0 : 0.75;
+            qreal polyOpacity = i == selectedBlock ? 1.0 : 0.6;
+            qreal charOpacity = i == selectedBlock ? 1.0 : 1.0;
 
             // 绘制辅助图层
             painter.setOpacity(polyOpacity);
             painter.setPen(QPen(Qt::blue, 3.0));
-            painter.setBrush(QBrush(Qt::yellow));
+            painter.setBrush(Qt::NoBrush);
             foreach (QPolygonF const &poly, block.getHelperPoly())
                 painter.drawPolygon(toScreenPoly(poly));
 
             // 绘制正在标注的字符区域
             painter.setOpacity(polyOpacity);
-            painter.setPen(QPen(Qt::green));
-            painter.setBrush(QBrush(Qt::red));
+            painter.setPen(QPen(Qt::green, 2.0));
+            painter.setBrush(Qt::NoBrush);
             foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
                 painter.drawPolygon(toScreenPoly(poly));
 
