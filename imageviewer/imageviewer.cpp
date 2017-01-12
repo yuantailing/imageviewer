@@ -116,14 +116,14 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
 
             // 绘制正在标注的字符区域
             painter.setOpacity(polyOpacity);
-            painter.setPen(QPen(Qt::green, 2.0));
+            painter.setPen(QPen(Qt::green, 1.0));
             painter.setBrush(Qt::NoBrush);
             foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
                 painter.drawPolygon(toScreenPoly(poly));
 
             // 绘制已标注的字符区域
             foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
-                paintCharacter(charAnno.box, charAnno.text, polyOpacity, charOpacity, Qt::green, Qt::red, Qt::black, 2.0);
+                paintCharacter(charAnno.box, charAnno.text, polyOpacity, charOpacity, Qt::green, Qt::red, Qt::black, 1.0);
             }
         }
 
@@ -275,7 +275,6 @@ void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
                 points[selectedPerspectiveHelperIndex] = toImageUV(event->pos());
             }
         } else {
-            qDebug() << '-';
             selectedPerspectiveHelperIndex = -1;
             QPointF *points = lastPerspectiveHelperPoints();
             if (points) {
