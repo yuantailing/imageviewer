@@ -164,10 +164,10 @@ QVector<QPolygonF> PerspectiveHelper::getPendingCharacterPoly() const {
             l2 = QLineF(stroke.p2(), stroke.p2() + delta);
         }
         QPointF p1, p2, p3, p4;
-        l1.intersect(bottom, &p1);
-        l2.intersect(bottom, &p2);
-        l2.intersect(up, &p3);
-        l1.intersect(up, &p4);
+        bottom.intersect(l1, &p1);
+        bottom.intersect(l2, &p2);
+        up.intersect(l2, &p3);
+        up.intersect(l1, &p4);
         return {QPolygonF({p1, p2, p3, p4})};
     }
     Q_ASSERT(false);
