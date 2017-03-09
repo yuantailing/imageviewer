@@ -23,7 +23,7 @@ QJsonArray poly2json(QPolygonF const &poly) {
     return res;
 }
 
-QJsonObject character2json(CharacterAnnotation charAnno) {
+QJsonObject character2json(CharacterAnnotation const &charAnno) {
     QJsonObject res;
     res["box"] = poly2json(charAnno.box);
     res["text"] = charAnno.text;
