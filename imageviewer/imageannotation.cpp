@@ -254,7 +254,7 @@ void PerspectiveHelper::addNewCharacterBoxToBlock(QPolygonF poly, BlockAnnotatio
 
 bool BlockAnnotation::isStringOk() const {
     foreach (CharacterAnnotation const &charAnno, characters)
-        if (charAnno.text.isEmpty())
+        if (charAnno.text.size() != 1)
             return false;
     return true;
 }
