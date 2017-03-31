@@ -44,6 +44,7 @@ private:
     int smallSize;
     int smallGap;
     int smallNum;
+    int smallMax;
     int bigWidth;
     int bigHeight;
     typedef QPair<QString, QPair<QRectF, QString> > Locator;

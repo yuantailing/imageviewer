@@ -49,6 +49,7 @@ MainWindow::MainWindow(QWidget *parent)
     bigWidth = 324;
     bigHeight = 200;
     smallNum = qMax(5, (size.width() - bigWidth) / (smallSize + smallGap) + 1);
+    smallMax = 0;
 
     imageLabel->setText(tr("1. 把multicharpack-****.doubt拖拽到此处\n") +
                         tr("2. 用键盘←↑→↓移动光标，看到标错的（或无法识别的）汉字时按回车\n") +
@@ -62,7 +63,7 @@ MainWindow::MainWindow(QWidget *parent)
                         tr("   请不要重命名这些文件（.doubt、.correction）\n") +
                         tr("   请把繁简体错误也更正过来\n") +
                         tr("   你可以拖动窗口大小，每行图片数量会自动调整\n") +
-                        tr("   点开对话框后，可以按Esc或Enter来关闭它，不一定要用鼠标点“×”或“OK”\n"));
+                        tr("   点开对话框后，可以按Esc或Enter来关闭它并保存，不一定要用鼠标点“×”或“OK”\n"));
     imageLabel->adjustSize();
 
     currentFocus = QPoint(1, 0);
@@ -159,28 +160,29 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         int i = currentFocus.y();
         if (keyEvent->key() == Qt::Key_Right) {
             j++;
-            if (j >= smallNum) {
-                i++;
-                j = 0;
-            }
         } else if (keyEvent->key() == Qt::Key_Left) {
             j--;
-            if (j < 0) {
-                i--;
-                j = smallNum - 1;
-            }
         } else if (keyEvent->key() == Qt::Key_Up) {
-            if (i > 0) i--;
-            if (j < 0) j = 0;
-            if (j >= smallNum) j = smallNum - 1;
+            i--;
         } else if (keyEvent->key() == Qt::Key_Down) {
             i++;
-            if (j < 0) j = 0;
-            if (j >= smallNum) j = smallNum - 1;
         }
+        if (j < 0) {
+            j = smallNum - 1;
+            i--;
+        }
+        if (j >= smallNum) {
+            j = 0;
+            i++;
+        }
+        i = qMax(0, qMin(smallMax - 1, i));
+        j = qMax(0, qMin(smallNum - 1, j));
         currentFocus = QPoint(j, i);
         if (currentFocus != oldFocus) {
             updateBigImage();
+            QPoint bigImageCenter = imageLabel->mapFrom(this, bigImageLabel->geometry().center());
+            scrollArea->ensureVisible(bigImageCenter.x(), bigImageCenter.y() - (smallSize + smallGap) / 2,
+                                      0, bigHeight / 2 + smallSize + smallGap);
             return true;
         }
     }
@@ -227,6 +229,7 @@ void MainWindow::setPack() {
             i++;
         j = 0;
     }
+    smallMax = i;
     image = QImage(smallNum * (smallSize + smallGap), i * (smallSize + smallGap) + bigHeight, QImage::Format_RGB32);
     image.fill(QColor(255, 255, 255));
     QPainter painter(&image);
