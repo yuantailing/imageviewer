@@ -18,27 +18,34 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = 0);
     ~MainWindow();
+    void updateBigImage();
 
 protected:
     void mousePressEvent(QMouseEvent *event);
     void resizeEvent(QResizeEvent *event);
     void dragEnterEvent(QDragEnterEvent *event);
     void dropEvent(QDropEvent *event);
+    bool eventFilter(QObject *watched, QEvent *event);
 
 private:
     void loadFile(QString filename);
     void setPack();
+    void modifyAt(int i, int j);
     void updateImageAt(int i, int j, QPainter &painter);
 
 private:
     QImage image;
     QLabel *imageLabel;
     QScrollArea *scrollArea;
+    QPoint currentFocus;
+    QLabel *bigImageLabel;
     QString packFilename;
     QString correctionFilename;
     int smallSize;
     int smallGap;
     int smallNum;
+    int bigWidth;
+    int bigHeight;
     typedef QPair<QString, QPair<QRectF, QString> > Locator;
     QMap<QString, QVector<QPair<Locator, QPair<QImage, QImage> > > > pack;
     QVector<QPair<Locator, QPair<QImage, QImage> > > locators;

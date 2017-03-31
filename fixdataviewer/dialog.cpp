@@ -1,5 +1,7 @@
 #include "dialog.h"
 #include "ui_dialog.h"
+#include <QKeyEvent>
+#include <QDebug>
 
 Dialog::Dialog(QWidget *parent) :
     QDialog(parent),
@@ -22,11 +24,30 @@ void Dialog::setData(QImage const &small, QImage const &big, QString const &orig
     ui->imageView->setPixmap(QPixmap::fromImage(big.scaled(ui->imageView->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
 }
 
-void Dialog::setReturn(QString &text, bool &isClear) {
+void Dialog::setReturn(QString &text, int &clearFlag) {
     this->text = &text;
-    this->isClear = &isClear;
+    this->clearFlag = &clearFlag;
     ui->lineEdit->setText(*this->text);
-    ui->checkBox->setChecked(!*this->isClear);
+    if (clearFlag == 0)
+        ui->clearFlagButton_0->setChecked(true);
+    else if (clearFlag == 1)
+        ui->clearFlagButton_1->setChecked(true);
+    else
+        ui->clearFlagButton_2->setChecked(true);
+}
+
+void Dialog::keyPressEvent(QKeyEvent *event) {
+    if (event->key() == Qt::Key_F1) {
+        ui->clearFlagButton_0->click();
+        close();
+    } else if (event->key() == Qt::Key_F2) {
+        ui->clearFlagButton_1->click();
+        close();
+    } else if (event->key() == Qt::Key_F3) {
+        ui->clearFlagButton_2->click();
+        close();
+    }
+    QDialog::keyPressEvent(event);
 }
 
 void Dialog::on_lineEdit_textChanged(const QString &)
@@ -34,7 +55,22 @@ void Dialog::on_lineEdit_textChanged(const QString &)
     *this->text = ui->lineEdit->text();
 }
 
-void Dialog::on_checkBox_toggled(bool checked)
+void Dialog::on_clearFlagButton_0_toggled(bool checked)
 {
-    *this->isClear = !checked;
+    if (true == checked)
+        *this->clearFlag = 0;
+}
+
+
+void Dialog::on_clearFlagButton_1_toggled(bool checked)
+{
+    if (true == checked)
+        *this->clearFlag = 1;
+}
+
+
+void Dialog::on_clearFlagButton_2_toggled(bool checked)
+{
+    if (true == checked)
+        *this->clearFlag = 2;
 }

@@ -15,7 +15,64 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
-    QFile file("../ch.v2.jsonlines");
+    QFile file("predictions.json");
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(this, tr("Error"),
+                                 tr("Cannot load %1.").arg(file.fileName()));
+        exit(1);
+    }
+    QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+    QJsonArray predictions = doc.array();
+    file.close();
+
+    file.setFileName("test_locators.json");
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(this, tr("Error"),
+                                 tr("Cannot load %1.").arg(file.fileName()));
+        exit(1);
+    }
+    doc = QJsonDocument::fromJson(file.readAll());
+    QJsonArray test_locators = doc.array();
+    file.close();
+
+    qDebug() << predictions.size() << test_locators.size();
+    if (predictions.size() != test_locators.size()) {
+        QMessageBox::information(this, tr("Error"),
+                                 tr("predictions.size() != test_locators.size()"));
+        exit(1);
+    }
+    typedef QPair<QString, QPair<QRectF, QString> > Locator;
+    QMap<QString, QVector<Locator> > ignoredLocators;
+    for (int i = 0; i < test_locators.size(); i++) {
+        bool isCorrect = predictions[i].toArray()[0].toBool();
+        double prob = predictions[i].toArray()[1].toDouble();
+        if (!isCorrect || prob < 0.95)
+            continue;
+        QString imgid = test_locators[i].toArray()[0].toString();
+        QString text = test_locators[i].toArray()[2].toString();
+        QJsonArray bbox = test_locators[i].toArray()[1].toArray();
+        double left = bbox[0].toDouble();
+        double top = bbox[1].toDouble();
+        double w = bbox[2].toDouble();
+        double h = bbox[3].toDouble();
+        QRectF rect(QPointF(left, top), QSizeF(w, h));
+        if (!ignoredLocators.contains(imgid))
+            ignoredLocators[imgid] = QVector<Locator>();
+        ignoredLocators[imgid].append(qMakePair(imgid, qMakePair(rect, text)));
+    }
+    auto isSame = [](Locator const &a, Locator const &b) {
+        if (a.first != b.first || a.second.second != b.second.second)
+            return false;
+        QRectF fa = a.second.first;
+        QRectF fb = b.second.first;
+        QRectF inter = fa.intersected(fb);
+        if (inter.width() < 0.99 * qMax(fa.width(), fb.width()) ||
+                inter.height() < 0.99 * qMax(fa.height(), fb.height()))
+            return false;
+        return true;
+    };
+
+    file.setFileName("../ch.v2.jsonlines");
     if (!file.open(QIODevice::ReadOnly)) {
         QMessageBox::information(this, tr("Error"),
                                  tr("Cannot load %1.").arg(file.fileName()));
@@ -47,7 +104,16 @@ MainWindow::MainWindow(QWidget *parent) :
                         ymin = qMin(ymin, y);
                         ymax = qMax(ymax, y);
                     }
-                    all.append(qMakePair(imgid, qMakePair(QRectF(xmin, ymin, xmax - xmin, ymax - ymin), text)));
+                    bool isIgnored = false;
+                    Locator thisLocator(qMakePair(imgid, qMakePair(QRectF(xmin, ymin, xmax - xmin, ymax - ymin), text)));
+                    if (ignoredLocators.contains(imgid))
+                        foreach (Locator const &ignored, ignoredLocators[imgid])
+                            if (isSame(thisLocator, ignored)) {
+                                isIgnored = true;
+                                break;
+                            }
+                    if (!isIgnored)
+                        all.append(qMakePair(imgid, qMakePair(QRectF(xmin, ymin, xmax - xmin, ymax - ymin), text)));
                 }
             }
         }
@@ -71,7 +137,7 @@ MainWindow::MainWindow(QWidget *parent) :
     qDebug() << all.size();
     qDebug() << all[0];
     int max_small_size = 32;
-    int max_big_size = 80;
+    int max_big_size = 96;
     QMap<QString, QVector<QPair<QPair<QString, QPair<QRectF, QString> >, QPair<QImage, QImage> > > > chars;
     QString lastimgid;
     QImage lastimg;
@@ -83,10 +149,15 @@ MainWindow::MainWindow(QWidget *parent) :
         if (imgid != lastimgid) {
             qDebug() << imgid << numImgLoaded;
             lastimg = QImage(QString("E:/tiger/char_renamed/%1/%2.jpg").arg(imgid[0]).arg(imgid));
+            if (lastimg.isNull()) {
+                QMessageBox::information(this, tr("Error"),
+                                         tr("Cannot load %1.").arg(imgid));
+                exit(1);
+            }
             lastimgid = imgid;
             numImgLoaded++;
         }
-        auto toRect = [](QRectF r) {
+        auto toRect = [](QRectF const &r) {
             qreal xmin = r.x();
             qreal ymin = r.y();
             qreal xmax = xmin + r.width();
@@ -97,7 +168,7 @@ MainWindow::MainWindow(QWidget *parent) :
             int ymaxi = (int)std::ceil(ymax);
             return QRect(xmini, ymini, xmaxi - xmini, ymaxi - ymini);
         };
-        auto toBigRect = [](QRectF r) {
+        auto toBigRect = [](QRectF const &r) {
             qreal xmin = r.x();
             qreal ymin = r.y();
             qreal w = r.width();
