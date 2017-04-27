@@ -79,7 +79,7 @@ MainWindow::MainWindow(QWidget *parent) :
         exit(1);
     }
     int _ = 0;
-    QVector<QPair<QString, QPair<QRectF, QString> > > all;
+    QVector<QPair<QString, QPair<QPolygonF, QString> > > all;
     QVector<QString> vecImgid;
     while (!file.atEnd()) {
         QJsonDocument doc = QJsonDocument::fromJson(file.readLine());
@@ -93,19 +93,12 @@ MainWindow::MainWindow(QWidget *parent) :
                     QJsonObject const &obj(arr2[j].toObject());
                     QString text = obj["text"].toString();
                     QJsonArray box = obj["box"].toArray();
-                    qreal xmin, xmax, ymin, ymax;
-                    xmin = xmax = box[0].toArray()[0].toDouble();
-                    ymin = ymax = box[0].toArray()[1].toDouble();
+                    QPolygonF poly;
                     for (int k = 0; k < box.size(); k++) {
-                        qreal x = box[k].toArray()[0].toDouble();
-                        qreal y = box[k].toArray()[1].toDouble();
-                        xmin = qMin(xmin, x);
-                        xmax = qMax(xmax, x);
-                        ymin = qMin(ymin, y);
-                        ymax = qMax(ymax, y);
+                        poly.append(QPointF(box[k].toArray()[0].toDouble(), box[k].toArray()[1].toDouble()));
                     }
                     bool isIgnored = false;
-                    Locator thisLocator(qMakePair(imgid, qMakePair(QRectF(xmin, ymin, xmax - xmin, ymax - ymin), text)));
+                    Locator thisLocator(qMakePair(imgid, qMakePair(poly.boundingRect(), text)));
                     if (ignoredLocators.contains(imgid))
                         foreach (Locator const &ignored, ignoredLocators[imgid])
                             if (isSame(thisLocator, ignored)) {
@@ -113,7 +106,7 @@ MainWindow::MainWindow(QWidget *parent) :
                                 break;
                             }
                     if (!isIgnored)
-                        all.append(qMakePair(imgid, qMakePair(QRectF(xmin, ymin, xmax - xmin, ymax - ymin), text)));
+                        all.append(qMakePair(imgid, qMakePair(poly, text)));
                 }
             }
         }
@@ -138,13 +131,13 @@ MainWindow::MainWindow(QWidget *parent) :
     qDebug() << all[0];
     int max_small_size = 32;
     int max_big_size = 96;
-    QMap<QString, QVector<QPair<QPair<QString, QPair<QRectF, QString> >, QPair<QImage, QImage> > > > chars;
+    QMap<QString, QVector<QPair<Locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > > > > chars;
     QString lastimgid;
     QImage lastimg;
     int numImgLoaded = 0;
     for (int i = 0; i < all.size(); i++) {
         QString imgid = all[i].first;
-        QRectF box = all[i].second.first;
+        QRectF box = all[i].second.first.boundingRect();
         QString text = all[i].second.second;
         if (imgid != lastimgid) {
             qDebug() << imgid << numImgLoaded;
@@ -198,12 +191,13 @@ MainWindow::MainWindow(QWidget *parent) :
         scale_max_longsize(small, max_small_size);
         scale_max_longsize(big, max_big_size);
         if (!chars.contains(text))
-            chars[text] = QVector<QPair<QPair<QString, QPair<QRectF, QString> >, QPair<QImage, QImage> > >();
-        chars[text].append(qMakePair(all[i], qMakePair(small, big)));
+            chars[text] = QVector<QPair<Locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > > >();
+        chars[text].append(qMakePair(qMakePair(all[i].first, qMakePair(all[i].second.first.boundingRect(), all[i].second.second)),
+                                     qMakePair(qMakePair(small, all[i].second.first), qMakePair(big, toBigRect(box)))));
     }
     int min_pack = 1000;
     int sum = 0;
-    QMap<QString, QVector<QPair<QPair<QString, QPair<QRectF, QString> >, QPair<QImage, QImage> > > > map_to_write;
+    QMap<QString, QVector<QPair<Locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > > > > map_to_write;
     int packcnt = 0;
     for (int i = 0; i < charCount.size(); i++) {
         QString text = charCount[i].first;

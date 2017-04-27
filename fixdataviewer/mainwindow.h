@@ -32,6 +32,7 @@ private:
     void setPack();
     void modifyAt(int i, int j);
     void updateImageAt(int i, int j, QPainter &painter);
+    QImage resizedBigWithBox(QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > const &info);
 
 private:
     QImage image;
@@ -42,14 +43,15 @@ private:
     QString packFilename;
     QString correctionFilename;
     int smallSize;
-    int smallGap;
+    int smallGapX;
+    int smallGapY;
     int smallNum;
     int smallMax;
     int bigWidth;
     int bigHeight;
     typedef QPair<QString, QPair<QRectF, QString> > Locator;
-    QMap<QString, QVector<QPair<Locator, QPair<QImage, QImage> > > > pack;
-    QVector<QPair<Locator, QPair<QImage, QImage> > > locators;
+    QMap<QString, QVector<QPair<Locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > > > > pack;
+    QVector<QPair<Locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > > > locators;
     QMap<int, QPair<QString, int> > correction;
     QMap<QPair<int, int>, int> pos2key;
     QMap<int, QPair<int, int> > key2ij;

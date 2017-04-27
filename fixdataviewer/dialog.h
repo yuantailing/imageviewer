@@ -29,6 +29,7 @@ private slots:
     void on_clearFlagButton_0_toggled(bool checked);
     void on_clearFlagButton_1_toggled(bool checked);
     void on_clearFlagButton_2_toggled(bool checked);
+    void on_clearFlagButton_3_toggled(bool checked);
 
 private:
     Ui::Dialog *ui;

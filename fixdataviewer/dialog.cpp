@@ -21,7 +21,7 @@ void Dialog::setData(QImage const &small, QImage const &big, QString const &orig
     ui->smallImageLabel->setPixmap(QPixmap::fromImage(small));
     ui->smallImageLabel->adjustSize();
     ui->imageView->setAlignment(Qt::AlignCenter);
-    ui->imageView->setPixmap(QPixmap::fromImage(big.scaled(ui->imageView->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+    ui->imageView->setPixmap(QPixmap::fromImage(big));
 }
 
 void Dialog::setReturn(QString &text, int &clearFlag) {
@@ -32,8 +32,10 @@ void Dialog::setReturn(QString &text, int &clearFlag) {
         ui->clearFlagButton_0->setChecked(true);
     else if (clearFlag == 1)
         ui->clearFlagButton_1->setChecked(true);
-    else
+    else if (clearFlag == 2)
         ui->clearFlagButton_2->setChecked(true);
+    else // clearFlag == 3
+        ui->clearFlagButton_3->setChecked(true);
 }
 
 void Dialog::keyPressEvent(QKeyEvent *event) {
@@ -45,6 +47,9 @@ void Dialog::keyPressEvent(QKeyEvent *event) {
         close();
     } else if (event->key() == Qt::Key_F3) {
         ui->clearFlagButton_2->click();
+        close();
+    } else if (event->key() == Qt::Key_F4) {
+        ui->clearFlagButton_3->click();
         close();
     }
     QDialog::keyPressEvent(event);
@@ -61,16 +66,20 @@ void Dialog::on_clearFlagButton_0_toggled(bool checked)
         *this->clearFlag = 0;
 }
 
-
 void Dialog::on_clearFlagButton_1_toggled(bool checked)
 {
     if (true == checked)
         *this->clearFlag = 1;
 }
 
-
 void Dialog::on_clearFlagButton_2_toggled(bool checked)
 {
     if (true == checked)
         *this->clearFlag = 2;
+}
+
+void Dialog::on_clearFlagButton_3_toggled(bool checked)
+{
+    if (true == checked)
+        *this->clearFlag = 3;
 }

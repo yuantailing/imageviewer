@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include <QGuiApplication>
+#include <QSettings>
 #include <QScreen>
 #include <QLabel>
 #include <QScrollArea>
@@ -32,6 +33,8 @@ MainWindow::MainWindow(QWidget *parent)
     , imageLabel(new QLabel)
     , scrollArea(new ScrollArea(this))
 {
+    QSettings settings("config.ini", QSettings::IniFormat);
+
     imageLabel->setBackgroundRole(QPalette::Base);
     imageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     imageLabel->setScaledContents(true);
@@ -45,10 +48,17 @@ MainWindow::MainWindow(QWidget *parent)
     resize(size);
 
     smallSize = 32;
-    smallGap = 6;
+    smallGapX = 6;
+    smallGapY = 6;
+    if (settings.contains("/size/smallSize"))
+        smallSize = settings.value("/size/smallSize").toInt();
+    if (settings.contains("/size/smallGapX"))
+        smallGapX = settings.value("/size/smallGapX").toInt();
+    if (settings.contains("/size/smallGapY"))
+        smallGapY = settings.value("/size/smallGapY").toInt();
     bigWidth = 324;
     bigHeight = 200;
-    smallNum = qMax(5, (size.width() - bigWidth) / (smallSize + smallGap) + 1);
+    smallNum = qMax(5, (size.width() - bigWidth) / (smallSize + smallGapX) + 1);
     smallMax = 0;
 
     imageLabel->setText(tr("1. 把multicharpack-****.doubt拖拽到此处\n") +
@@ -84,25 +94,22 @@ void MainWindow::updateBigImage() {
     QImage big;
     if (pos2key.contains(p)) {
         int key = pos2key[p];
-        big = locators[key].second.second;
+        big = resizedBigWithBox(locators[key].second);
     } else {
         big = QImage(10, 4, QImage::Format_RGB32);
         big.fill(Qt::white);
     }
-    QImage resized = big.scaledToWidth(bigWidth - 4, Qt::SmoothTransformation);
-    if (resized.height() > bigHeight - 32)
-        resized = big.scaledToHeight(bigWidth - 32, Qt::SmoothTransformation);
     QImage boardedImage(bigWidth, bigHeight, QImage::Format_RGB32);
     boardedImage.fill(QColor(224, 224, 255));
     QPainter painter(&boardedImage);
-    painter.drawImage(2, 16, resized);
+    painter.drawImage(2, 16, big);
     painter.setBrush(QBrush(QColor(255, 0, 255)));
     QPolygon poly;
     poly.append(QPoint(smallSize / 2, 0));
     poly.append(QPoint(smallSize / 2 - 8, 14));
     poly.append(QPoint(smallSize / 2 + 8, 14));
     painter.drawPolygon(poly);
-    QPoint pos(j * (smallSize + smallGap), i * (smallSize + smallGap) + smallSize);
+    QPoint pos(j * (smallSize + smallGapX), i * (smallSize + smallGapY) + smallSize);
     pos = imageLabel->mapTo(this, pos);
     bigImageLabel->setGeometry(QRect(pos, boardedImage.size()));
     bigImageLabel->setPixmap(QPixmap::fromImage(boardedImage));
@@ -114,9 +121,9 @@ void MainWindow::mousePressEvent(QMouseEvent *event) {
             modifyAt(currentFocus.y(), currentFocus.x());
         } else {
             QPoint pos = imageLabel->mapFrom(this, event->pos());
-            int i = pos.y() / (smallSize + smallGap);
-            int j = pos.x() / (smallSize + smallGap);
-            if (pos.y() % (smallSize + smallGap) < smallSize && pos.x() % (smallSize + smallGap) < smallSize && j < smallNum) {
+            int i = pos.y() / (smallSize + smallGapY);
+            int j = pos.x() / (smallSize + smallGapX);
+            if (pos.y() % (smallSize + smallGapY) < smallSize && pos.x() % (smallSize + smallGapX) < smallSize && j < smallNum) {
                 currentFocus = QPoint(j, i);
                 updateBigImage();
                 modifyAt(i, j);
@@ -127,9 +134,9 @@ void MainWindow::mousePressEvent(QMouseEvent *event) {
 }
 
 void MainWindow::resizeEvent(QResizeEvent *event) {
-    smallNum = qMax(5, (event->size().width() - bigWidth) / (smallSize + smallGap) + 1);
+    smallNum = qMax(5, (event->size().width() - bigWidth) / (smallSize + smallGapX) + 1);
     if (!packFilename.isEmpty())
-        loadFile(packFilename);
+        setPack();
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event) {
@@ -158,31 +165,35 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
         QPoint oldFocus = currentFocus;
         int j = currentFocus.x();
         int i = currentFocus.y();
-        if (keyEvent->key() == Qt::Key_Right) {
-            j++;
-        } else if (keyEvent->key() == Qt::Key_Left) {
-            j--;
-        } else if (keyEvent->key() == Qt::Key_Up) {
-            i--;
-        } else if (keyEvent->key() == Qt::Key_Down) {
-            i++;
+        for (int k = 0; k < smallNum; k++) {
+            if (keyEvent->key() == Qt::Key_Right) {
+                j++;
+            } else if (keyEvent->key() == Qt::Key_Left) {
+                j--;
+            } else if (keyEvent->key() == Qt::Key_Up) {
+                i--;
+            } else if (keyEvent->key() == Qt::Key_Down) {
+                i++;
+            }
+            if (j < 0) {
+                j = smallNum - 1;
+                i--;
+            }
+            if (j >= smallNum) {
+                j = 0;
+                i++;
+            }
+            i = qMax(0, qMin(smallMax - 1, i));
+            j = qMax(0, qMin(smallNum - 1, j));
+            if (pos2key.contains(qMakePair(i, j)))
+                break;
         }
-        if (j < 0) {
-            j = smallNum - 1;
-            i--;
-        }
-        if (j >= smallNum) {
-            j = 0;
-            i++;
-        }
-        i = qMax(0, qMin(smallMax - 1, i));
-        j = qMax(0, qMin(smallNum - 1, j));
         currentFocus = QPoint(j, i);
         if (currentFocus != oldFocus) {
             updateBigImage();
             QPoint bigImageCenter = imageLabel->mapFrom(this, bigImageLabel->geometry().center());
-            scrollArea->ensureVisible(bigImageCenter.x(), bigImageCenter.y() - (smallSize + smallGap) / 2,
-                                      0, bigHeight / 2 + smallSize + smallGap);
+            scrollArea->ensureVisible(bigImageCenter.x(), bigImageCenter.y() - (smallSize + smallGapY) / 2,
+                                      0, bigHeight / 2 + smallSize + smallGapY);
             return true;
         }
     }
@@ -199,7 +210,7 @@ void MainWindow::loadFile(QString filename) {
     QByteArray array(file.readAll());
     file.close();
     array = qUncompress(array);
-    QMap<QString, QVector<QPair<Locator, QPair<QImage, QImage> > > > map_loaded;
+    QMap<QString, QVector<QPair<Locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > > > > map_loaded;
     QDataStream stream(&array, QIODevice::ReadOnly);
     stream >> map_loaded;
     if (!stream.atEnd() || !(stream.status() == QDataStream::Ok)) {
@@ -208,15 +219,15 @@ void MainWindow::loadFile(QString filename) {
         return;
     }
     pack.clear();
-    locators.clear();
-    correction.clear();
-    pos2key.clear();
     pack = map_loaded;
     packFilename = filename;
     setPack();
 }
 
 void MainWindow::setPack() {
+    locators.clear();
+    correction.clear();
+    pos2key.clear();
     int i = 0, j = 0;
     for (auto it = pack.begin(); it != pack.end(); it++) {
         j += 1;
@@ -230,13 +241,13 @@ void MainWindow::setPack() {
         j = 0;
     }
     smallMax = i;
-    image = QImage(smallNum * (smallSize + smallGap), i * (smallSize + smallGap) + bigHeight, QImage::Format_RGB32);
+    image = QImage(smallNum * (smallSize + smallGapX), i * (smallSize + smallGapY) + bigHeight, QImage::Format_RGB32);
     image.fill(QColor(255, 255, 255));
     QPainter painter(&image);
     i = 0;
     j = 0;
     auto putNext = [&](QImage const &image) {
-        painter.drawImage(QPoint(j * (smallSize + smallGap), i * (smallSize + smallGap)),
+        painter.drawImage(QPoint(j * (smallSize + smallGapX), i * (smallSize + smallGapY)),
                           image.scaled(QSize(smallSize, smallSize), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         j += 1;
         while (j >= smallNum) {
@@ -244,12 +255,12 @@ void MainWindow::setPack() {
             j -= smallNum;
         }
     };
-    auto putNextWithKey = [&](QImage const &small, Locator const &locator, QImage const &big) {
+    auto putNextWithKey = [&](Locator const &locator, QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > const &info) {
         int key = locators.size();
-        locators.push_back(qMakePair(locator, qMakePair(small, big)));
+        locators.push_back(qMakePair(locator, info));
         pos2key[qMakePair(i, j)] = key;
         key2ij[key] = qMakePair(i, j);
-        putNext(small);
+        putNext(info.first.first);
     };
     auto newLine = [&]() {
         if (j != 0)
@@ -278,9 +289,7 @@ void MainWindow::setPack() {
         putNext(text2img(originText));
         foreach (auto pit, it.value()) {
             Locator const &locator = pit.first;
-            QImage const &small = pit.second.first;
-            QImage const &big = pit.second.second;
-            putNextWithKey(small, locator, big);
+            putNextWithKey(locator, pit.second);
         }
         newLine();
     }
@@ -342,14 +351,14 @@ void MainWindow::modifyAt(int i, int j) {
         Dialog d(this);
         QString originText = locators[key].first.second.second;
         QString resultText;
-        int clearFlag; //  0 清晰， 1 有字但无法识别， 2 无字
+        int clearFlag; //  0 清晰， 1 有字但无法识别， 2 无字， 3 多个字
         if (correction.contains(key)) {
             resultText = correction[key].first;
             clearFlag = correction[key].second;
         } else {
             clearFlag = 0;
         }
-        d.setData(locators[key].second.first, locators[key].second.second, originText);
+        d.setData(locators[key].second.first.first, resizedBigWithBox(locators[key].second), originText);
         d.setReturn(resultText, clearFlag);
         d.show();
         d.exec();
@@ -393,12 +402,12 @@ void MainWindow::updateImageAt(int i, int j, QPainter &painter) {
     QPair<int, int> p(i, j);
     int key = pos2key[p];
     int penwidth = 4;
-    QImage const &small(locators[key].second.first);
+    QImage const &small(locators[key].second.first.first);
     painter.setBrush(Qt::NoBrush);
     painter.setPen(QPen(QBrush(Qt::white), penwidth));
-    painter.drawRect(QRect(QPoint(j * (smallSize + smallGap), i * (smallSize + smallGap)),
+    painter.drawRect(QRect(QPoint(j * (smallSize + smallGapX), i * (smallSize + smallGapY)),
                            QSize(smallSize, smallSize)));
-    painter.drawImage(QPoint(j * (smallSize + smallGap), i * (smallSize + smallGap)),
+    painter.drawImage(QPoint(j * (smallSize + smallGapX), i * (smallSize + smallGapY)),
                       small.scaled(QSize(smallSize, smallSize), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
     if (correction.contains(key)) {
         bool correct = correction[key].first == locators[key].first.second.second;
@@ -406,13 +415,32 @@ void MainWindow::updateImageAt(int i, int j, QPainter &painter) {
         if (clearFlag != 0) {
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(QBrush(Qt::red), penwidth));
-            painter.drawRect(QRect(QPoint(j * (smallSize + smallGap), i * (smallSize + smallGap)),
+            painter.drawRect(QRect(QPoint(j * (smallSize + smallGapX), i * (smallSize + smallGapY)),
                                    QSize(smallSize, smallSize)));
         } else if (!correct) {
             painter.setBrush(Qt::NoBrush);
             painter.setPen(QPen(QBrush(Qt::green), penwidth));
-            painter.drawRect(QRect(QPoint(j * (smallSize + smallGap), i * (smallSize + smallGap)),
+            painter.drawRect(QRect(QPoint(j * (smallSize + smallGapX), i * (smallSize + smallGapY)),
                                    QSize(smallSize, smallSize)));
         }
     }
+}
+
+QImage MainWindow::resizedBigWithBox(const QPair<QPair<QImage, QPolygonF>, QPair<QImage, QRect> > &info) {
+    QImage const &big = info.second.first;
+    QImage resized = big.scaled(QSize(bigWidth - 4, bigHeight - 32), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    QPolygonF poly0 = info.first.second;
+    QRect rect0 = info.second.second;
+    QRect rect1(0, 0, resized.width(), resized.height());
+    QPainter painter(&resized);
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(QBrush(Qt::green), 1));
+    QPolygonF poly1;
+    foreach (QPointF const &p, poly0) {
+        qreal x = (p.x() - rect0.left()) / rect0.width() * rect1.width();
+        qreal y = (p.y() - rect0.top()) / rect0.height() * rect1.height();
+        poly1.push_back(QPoint(x, y));
+    }
+    painter.drawPolygon(poly1);
+    return resized;
 }
