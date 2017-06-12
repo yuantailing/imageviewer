@@ -96,13 +96,15 @@ public:
                 return false;
             }
             bool found = false;
-            for (BlockAnnotation &block: anno.blocks) {
-                for (auto cit = block.characters.begin(); cit != block.characters.end(); cit++) {
-                    QRectF box = cit->box.boundingRect();
+            for (int i = 0; i < anno.blocks.size(); i++) {
+                if (anno.blocks[i].characters.isEmpty())
+                    continue;
+                for (int j = 0; j < anno.blocks[i].characters.size(); j++) {
+                    QRectF box = anno.blocks[i].characters[j].box.boundingRect();
                     QRectF const &target(locator.second.first);
                     QRectF inter = box.intersected(target);
                     if (inter.width() * inter.height() / (box.width() * box.height() + target.width() * target.height() - inter.width() * inter.height()) > 0.99) {
-                        if (locator.second.second != cit->text) {
+                        if (locator.second.second != anno.blocks[i].characters[j].text) {
                             cout << "error: ch-not-matched" << endl;
                             return false;
                         }
@@ -112,13 +114,16 @@ public:
                         }
                         found = true;
                         if (it->second.second == 2) {
-                            block.characters.erase(cit, cit + 1);
+                            anno.blocks[i].characters.remove(j);
+                            if (anno.blocks[i].characters.isEmpty()) {
+                                anno.blocks.remove(i);
+                            }
                         } else if (it->second.second == 0) {
                             if (it->second.first.length() != 1) {
                                 cout << "error: length != 1" << endl;
                                 return false;
                             }
-                            cit->text = it->second.first;
+                            anno.blocks[i].characters[j].text = it->second.first;
                         } else {
                             cout << "error: case not in {0, 2}" << endl;
                             return false;
@@ -127,6 +132,7 @@ public:
                         break;
                     }
                 }
+                if (found) break;
             }
             if (!found) {
                 cout << "error: not-found" << endl;
