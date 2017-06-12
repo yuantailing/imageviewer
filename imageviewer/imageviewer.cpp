@@ -446,7 +446,6 @@ void ImageViewer::loadFile(QString const &fileName) {
     QFile file(annotationFileName(imageFileName));
     if (file.open(QIODevice::ReadOnly)) {
         QDataStream stream(&file);
-        QByteArray annoArray, historyArray;
         stream >> anno;
         bool okAnno = stream.status() == QDataStream::Ok;
         stream >> history;
