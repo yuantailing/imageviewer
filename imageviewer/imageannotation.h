@@ -97,7 +97,7 @@ public:
 
     bool isStringOk() const;
 
-    void onInputString(QString const &s);
+    QString onInputString(QString const &s);
 
     QVector<QPolygonF> getHelperPoly() const {
         if (helperType == PERSPECTIVE_HELPER)
@@ -174,9 +174,9 @@ public:
         return blocks[index].isStringOk();
     }
 
-    void onInputString(QString const &s, int index) {
+    QString onInputString(QString const &s, int index) {
         Q_ASSERT(0 <= index && index < blocks.size());
-        blocks[index].onInputString(s);
+        return blocks[index].onInputString(s);
     }
 
     void onNewBlock() {

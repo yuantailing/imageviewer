@@ -559,13 +559,15 @@ void ImageViewer::inputStringToAnnotation(int index) {
         QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字（或英文单词）").arg(wordNeeded),
                                              QLineEdit::Normal, originText, &ok);
         if (ok) {
-            anno.onInputString(text, index);
+            QString inputRes = anno.onInputString(text, index);
             update();
-            if (anno.isStringOk(index)) {
+            if (!inputRes.isEmpty()) {
+                QMessageBox::information(this, tr("Image Viewer"), inputRes);
+            } else if (!anno.isStringOk(index)) {
+                QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足，或一个位置有多个字"));
+            } else {
                 if (index == anno.blocks.size() - 1)
                     anno.onNewBlock();
-            } else {
-                QMessageBox::information(this, tr("Image Viewer"), tr("输入字数不足，或一个位置有多个字"));
             }
             addHistoryPoint();
             updateBlockList();
@@ -677,16 +679,28 @@ void ImageViewer::reloadFeedbacks() {
 void ImageViewer::save() {
     if (imageFileName.isEmpty())
         return;
-    QFile file(annotationFileName(imageFileName));
-    if (!file.open(QIODevice::WriteOnly)) {
+    QFile file0(annotationFileName(imageFileName));
+    QFile file1(annotationFileName(imageFileName) + ".tmp");
+    if (file1.exists()) {
         QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Cannot write %1.").arg(file.fileName()));
+                                 tr("Already exists %1.").arg(file1.fileName()));
         return;
     }
-    QDataStream stream(&file);
+    if (!file1.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot write %1.").arg(file1.fileName()));
+        return;
+    }
+    QDataStream stream(&file1);
     stream << anno;
     stream << history;
-    file.close();
+    file1.close();
+    file0.remove();
+    if (!file1.rename(file0.fileName())) {
+        QMessageBox::information(this, tr("Image Viewer"),
+                                 tr("Cannot rename %1.").arg(file0.fileName()));
+        return;
+    }
 }
 
 void ImageViewer::exportPackage() {

@@ -56,12 +56,12 @@ void PerspectiveHelper::setPoint(QPointF p, qreal scale, bool regular, BlockAnno
     if (!pending)
         lastPointInvalid = true;
     if (numPoint > 0 && numPoint < 4) {
-        qreal accepted_distance = 15.001 / scale;
+        qreal accepted_distance = 5.001 / scale;
         if ((p - points[numPoint - 1]).manhattanLength() < accepted_distance)
         return;
     }
     if (numPoint == 4 && stroking) {
-        qreal accepted_distance = 6.001 / scale;
+        qreal accepted_distance = 2.501 / scale;
         if ((p - stroke.p1()).manhattanLength() < accepted_distance)
         return;
     }
@@ -259,7 +259,8 @@ bool BlockAnnotation::isStringOk() const {
     return true;
 }
 
-void BlockAnnotation::onInputString(QString const &s) {
+QString BlockAnnotation::onInputString(QString const &s) {
+    QString res("");
     QStringList list = s.split(" ", QString::SkipEmptyParts);
     if (list.isEmpty()) {
         // do nothing
@@ -270,13 +271,22 @@ void BlockAnnotation::onInputString(QString const &s) {
             characters[i].text = trimed.mid(i, 1);
         for (int i = n; i < characters.size(); i++)
             characters[i].text.clear();
+        if (trimed.length() < characters.size())
+            res = QObject::tr("输入字数过少");
+        if (trimed.length() > characters.size())
+            res = QObject::tr("输入字数过多");
     } else {
         int n = qMin(list.size(), characters.size());
         for (int i = 0; i < n; i++)
             characters[i].text = list[i];
         for (int i = n; i < characters.size(); i++)
             characters[i].text.clear();
+        if (list.size() < characters.size())
+            res = QObject::tr("输入字数过少");
+        if (list.size() > characters.size())
+            res = QObject::tr("输入字数过多");
     }
+    return res;
 }
 
 QDataStream &operator <<(QDataStream &stream, CharacterAnnotation const &anno) {
