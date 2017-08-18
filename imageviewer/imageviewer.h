@@ -61,18 +61,13 @@ private:
 
 private slots:
     void open();
-    void importFeedbacks();
-    void reloadFeedbacks();
     void save();
-    void exportPackage();
-    void unpack();
     void undo();
     void redo();
     void switchTool();
     void deleteBlock();
     void zoomIn();
     void zoomOut();
-    void showHideFeedbacks();
     void setLocation(QPoint loc);
     void resetLocation();
     void onListWidgetSelect();
@@ -80,17 +75,13 @@ private slots:
 
 private:
     QAction *openAct;
-    QAction *importFeedbacksAct;
     QAction *saveAct;
-    QAction *exportPackageAct;
-    QAction *unpackAct;
     QAction *undoAct;
     QAction *redoAct;
     QAction *switchToolAct;
     QAction *deleteBlockAct;
     QAction *zoomInAct;
     QAction *zoomOutAct;
-    QAction *showHideFeedbacksAct;
     QAction *resetLocationAct;
     QMenu *fileMenu;
     QMenu *editMenu;
@@ -104,7 +95,6 @@ private:
 
     bool draggingImage;
     bool drawingLabel;
-    bool showingFeedbacks;
 
     QWidget *centralWidget;
     QListWidget *listWidget;
@@ -118,7 +108,6 @@ private:
     QImage scaledImage;
     QPoint imageLeftTop;
     qreal scaleFactor;
-    QJsonObject feedbacks;
 
     ImageAnnotation anno;
     QVector<ImageAnnotation> history;

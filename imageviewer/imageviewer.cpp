@@ -29,7 +29,6 @@ ImageViewer::ImageViewer(QWidget *parent)
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
     drawingLabel = false;
-    showingFeedbacks = true;
     annotationSuffix = QString("stream");
     resetHistory();
     changingPerspectiveHelper = false;
@@ -126,38 +125,6 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
                 paintCharacter(charAnno.box, charAnno.text, polyOpacity, charOpacity, Qt::green, Qt::red, Qt::black, 1.0);
             }
         }
-
-    if (showingFeedbacks && (!controlPressed || !shiftPressed) && feedbacks.contains(imageBaseName)) {
-        QJsonObject obj = feedbacks[imageBaseName].toObject();
-        QJsonArray error = obj["error"].toArray();
-        QJsonArray miss = obj["miss"].toArray();
-        QJsonArray reduntant = obj["reduntant"].toArray();
-        auto paint = [&](QJsonArray const &array, qreal polyOpacity, qreal charOpacity,
-                QColor penColor, QColor brushColor, QColor charColor = Qt::black, qreal penWidth = 4.0) {
-            for (int i = 0; i < array.size(); i++) {
-                QJsonObject ch = array[i].toObject();
-                QJsonArray jbox = ch["box"].toArray();
-                QPolygonF box;
-                for (int j = 0; j < jbox.size(); j++) {
-                    QJsonArray xy = jbox[j].toArray();
-                    double x = xy[0].toDouble();
-                    double y = xy[1].toDouble();
-                    box.push_back(QPointF(x, y));
-                }
-                QString text = ch["text"].toString();
-                paintCharacter(box, text, polyOpacity, charOpacity, penColor, brushColor, charColor, penWidth);
-            }
-        };
-        paint(error, 1, 1, Qt::white, Qt::cyan);
-        paint(miss, 1, 1, Qt::white, Qt::red);
-        paint(reduntant, 1, 0, Qt::black, Qt::yellow);
-        QPolygonF errorSample(QRectF(toImageUV(QPoint(20, 60)), toImageUV(QPoint(100, 100))));
-        QPolygonF missSample(QRectF(toImageUV(QPoint(20, 110)), toImageUV(QPoint(100, 150))));
-        QPolygonF reduntantSample(QRectF(toImageUV(QPoint(20, 160)), toImageUV(QPoint(100, 200))));
-        paintCharacter(errorSample, "错标", 1, 1, Qt::white, Qt::cyan, Qt::black, 4.0);
-        paintCharacter(missSample, "漏标", 1, 1, Qt::white, Qt::red, Qt::black, 4.0);
-        paintCharacter(reduntantSample, "多标", 1, 1, Qt::black, Qt::yellow, Qt::black, 4.0);
-    }
 
     // 绘制用户关注的焦点（上一次鼠标点击位置）
     if (!controlPressed || !shiftPressed) {
@@ -342,18 +309,9 @@ void ImageViewer::createActions() {
     openAct->setShortcut(tr("Ctrl+O"));
     connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
 
-    importFeedbacksAct = new QAction(tr("&Import feedbacks"), this);
-    connect(importFeedbacksAct, SIGNAL(triggered()), this, SLOT(importFeedbacks()));
-
     saveAct = new QAction(tr("&Save"), this);
     saveAct->setShortcut(tr("Ctrl+S"));
     connect(saveAct, SIGNAL(triggered()), this, SLOT(save()));
-
-    exportPackageAct = new QAction(tr("&Export package"), this);
-    connect(exportPackageAct, SIGNAL(triggered()), this, SLOT(exportPackage()));
-
-    unpackAct = new QAction(tr("&Unpack"), this);
-    connect(unpackAct, SIGNAL(triggered()), this, SLOT(unpack()));
 
     undoAct = new QAction(tr("&Undo"), this);
     undoAct->setShortcut(tr("Ctrl+Z"));
@@ -379,10 +337,6 @@ void ImageViewer::createActions() {
     zoomOutAct->setShortcut(tr("Ctrl+-"));
     connect(zoomOutAct, SIGNAL(triggered()), this, SLOT(zoomOut()));
 
-    showHideFeedbacksAct = new QAction(tr("Show / Hide &Feedbacks"), this);
-    showHideFeedbacksAct->setShortcut(tr("F2"));
-    connect(showHideFeedbacksAct, SIGNAL(triggered()), this, SLOT(showHideFeedbacks()));
-
     resetLocationAct = new QAction(tr("&Reset location / scale"), this);
     resetLocationAct->setShortcut(tr("Ctrl+0"));
     connect(resetLocationAct, SIGNAL(triggered()), this, SLOT(resetLocation()));
@@ -391,10 +345,7 @@ void ImageViewer::createActions() {
 void ImageViewer::createMenus() {
     fileMenu = new QMenu(tr("&File"), this);
     fileMenu->addAction(openAct);
-    fileMenu->addAction(importFeedbacksAct);
     fileMenu->addAction(saveAct);
-    fileMenu->addAction(exportPackageAct);
-    fileMenu->addAction(unpackAct);
     \
     editMenu = new QMenu(tr("&Edit"), this);
     editMenu->addAction(undoAct);
@@ -405,7 +356,6 @@ void ImageViewer::createMenus() {
     viewMenu = new QMenu(tr("&View"), this);
     viewMenu->addAction(zoomInAct);
     viewMenu->addAction(zoomOutAct);
-    viewMenu->addAction(showHideFeedbacksAct);
     viewMenu->addAction(resetLocationAct);
 
     menuBar()->addMenu(fileMenu);
@@ -434,7 +384,6 @@ void ImageViewer::loadFile(QString const &fileName) {
         QStringList filters;
         filters << "*.jpg" << "*.png" << "*.bmp" << "*.jpeg" << "*.gif";
         imagesInFolder = dir_new.entryList(filters, QDir::Files | QDir::Readable);
-        reloadFeedbacks();
     }
 
     setWindowTitle(tr("[第%1/%2张] %3").arg(1 + imagesInFolder.indexOf(QFileInfo(imageFileName).fileName())).
@@ -615,67 +564,6 @@ void ImageViewer::open() {
     }
 }
 
-void ImageViewer::importFeedbacks() {
-    if (imageFileName.isEmpty()) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("请先打开一张图片，再进行此操作"));
-        return;
-    }
-    QString fileName = QFileDialog::getOpenFileName(this, QString(), QString(), "JSON (*.json)");
-    QFile inFile(fileName);
-    if (!inFile.open(QIODevice::ReadOnly)) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Cannot load %1.").arg(inFile.fileName()));
-        return;
-    }
-    QByteArray inArray = inFile.readAll();
-    inFile.close();
-    QJsonParseError inError;
-    QJsonDocument document = QJsonDocument::fromJson(inArray, &inError);
-    if (inError.error != QJsonParseError::NoError || !document.isObject()) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Json parse error: %1.\nFile: %2.").arg(inError.errorString()).arg(inFile.fileName()));
-        return;
-    }
-    QJsonObject obj = document.object();
-    QFile outFile(imageFolder.filePath("feedback.json"));
-    if (!outFile.open(QIODevice::WriteOnly)) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Cannot write %1.").arg(outFile.fileName()));
-        return;
-    }
-    outFile.write(document.toJson(QJsonDocument::Compact));
-    outFile.close();
-    showingFeedbacks = true;
-    reloadFeedbacks();
-    QMessageBox::information(this, tr("Image Viewer"),
-                                   tr("成功导入这组feedbacks！下次会自动加载，无需重复导入"));
-}
-
-void ImageViewer::reloadFeedbacks() {
-    if (imageFileName.isEmpty())
-        return;
-    QFile inFile(imageFolder.filePath("feedback.json"));
-    if (!inFile.exists())
-        return;
-    if (!inFile.open(QIODevice::ReadOnly)) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Cannot load %1.").arg(inFile.fileName()));
-        return;
-    }
-    QByteArray inArray = inFile.readAll();
-    inFile.close();
-    QJsonParseError inError;
-    QJsonDocument document = QJsonDocument::fromJson(inArray, &inError);
-    if (inError.error != QJsonParseError::NoError || !document.isObject()) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Json parse error: %1.\nFile: %2.").arg(inError.errorString()).arg(inFile.fileName()));
-        return;
-    }
-    feedbacks = document.object();
-    update();
-}
-
 void ImageViewer::save() {
     if (imageFileName.isEmpty())
         return;
@@ -702,105 +590,6 @@ void ImageViewer::save() {
         return;
     }
 }
-
-void ImageViewer::exportPackage() {
-    if (imageFileName.isEmpty()) {
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("请先打开一张图片，再进行此操作"));
-        return;
-    }
-    save();
-    QString fileName = QFileDialog::getSaveFileName(this, QString(), imageFolder.filePath("annotation.pack"));
-    if (!fileName.isEmpty()) {
-        QFile file(fileName);
-        QStringList exportList;
-        if (!file.open(QIODevice::WriteOnly)) {
-            QMessageBox::information(this, tr("Image Viewer"),
-                                     tr("Cannot write %1.").arg(file.fileName()));
-            return;
-        }
-        QDataStream stream(&file);
-        for (QStringList::Iterator it = imagesInFolder.begin(); it != imagesInFolder.end(); it++) {
-            QFile f(annotationFileName(imageFolder.filePath(*it)));
-            if (!f.exists())
-                continue;
-            if (!f.open(QIODevice::ReadOnly)) {
-                QMessageBox::information(this, tr("Image Viewer"),
-                                         tr("Cannot load %1.").arg(f.fileName()));
-                return;
-            }
-            QFileInfo fileInfo(f);
-            stream << fileInfo.completeBaseName();
-            stream << qCompress(f.readAll(), 9);
-            f.close();
-            exportList << fileInfo.fileName();
-        }
-        file.close();
-        QString info = tr("导出了 %1 张图片的标注：").arg(exportList.size());
-        info += "\n";
-        foreach (QString const &s, exportList)
-            info += s + ", ";
-        QMessageBox::information(this, tr("Image Viewer"), info);
-    }
-}
-
-void ImageViewer::unpack() {
-    QString fileName = QFileDialog::getOpenFileName(this, QString(), imageFolder.path());
-    if (!fileName.isEmpty()) {
-        QFile file(fileName);
-        QDir dir(fileName);
-        dir.cdUp();
-        QFileInfo fileInfo(file);
-        QString folderName = "unpack-from-" + fileInfo.fileName();
-        dir.mkdir(folderName);
-        if (!dir.cd(folderName)) {
-            QMessageBox::information(this, tr("Image Viewer"),
-                                     tr("Cannot cd to %1.").arg(dir.filePath(folderName)));
-            return;
-        }
-        if (!file.open(QIODevice::ReadOnly)) {
-            QMessageBox::information(this, tr("Image Viewer"),
-                                     tr("Cannot load %1.").arg(file.fileName()));
-            return;
-        }
-        QDataStream stream(&file);
-        int cnt = 0;
-        while (!stream.atEnd()) {
-            QString baseName;
-            QByteArray fileContent;
-            stream >> baseName;
-            stream >> fileContent;
-            if (stream.status() != QDataStream::Ok) {
-                QMessageBox::information(this, tr("Image Viewer"),
-                                         tr("Stream is bad: %1.").arg(file.fileName()));
-                file.close();
-                return;
-            }
-            QString streamFileName = dir.filePath(baseName + "." + annotationSuffix);
-            QFile streamFile(streamFileName);
-            fileContent = qUncompress(fileContent);
-            if (fileContent.isEmpty()) {
-                QMessageBox::information(this, tr("Image Viewer"),
-                                         tr("Uncompress %1 failed.").arg(baseName));
-                file.close();
-                return;
-            }
-            if (!streamFile.open(QIODevice::WriteOnly)) {
-                QMessageBox::information(this, tr("Image Viewer"),
-                                         tr("Cannot write %1.").arg(streamFile.fileName()));
-                file.close();
-                return;
-            }
-            streamFile.write(fileContent);
-            streamFile.close();
-            cnt++;
-        }
-        file.close();
-        QMessageBox::information(this, tr("Image Viewer"),
-                                 tr("Successfully unpacked %1 annotations to %2.").arg(cnt).arg(dir.path()));
-    }
-}
-
 
 void ImageViewer::undo() {
     if (drawingLabel)
@@ -878,11 +667,6 @@ void ImageViewer::zoomOut() {
 
 void ImageViewer::setLocation(QPoint loc) {
     imageLeftTop = loc;
-    update();
-}
-
-void ImageViewer::showHideFeedbacks() {
-    showingFeedbacks = !showingFeedbacks;
     update();
 }
 
