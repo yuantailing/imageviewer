@@ -11,6 +11,8 @@ QT_BEGIN_NAMESPACE
 class QAction;
 class QMenu;
 class QListWidget;
+class QRadioButton;
+class QCheckBox;
 class QLabel;
 class QImage;
 QT_END_NAMESPACE
@@ -35,6 +37,7 @@ protected:
     void dragEnterEvent(QDragEnterEvent *);
     void dropEvent(QDropEvent *);
     void closeEvent(QCloseEvent *);
+    bool eventFilter(QObject *watched, QEvent *event);
 
 private:
     void createActions();
@@ -44,6 +47,9 @@ private:
     void resetLocation(QSize size);
     void resetHistory();
     void addHistoryPoint(int flag = 0); // 0: strong history; 1: week history; 2: replace last history
+    void addHistoryPoint(QString const &mergeKey);
+    void changePropStatus(int index, bool checked);
+    void updatePropsCheckBox();
     void updateBlockList();
     QPointF toImageUV(QPoint screenUV) const;
     QPointF toScreenUV(QPointF imageUV) const;
@@ -98,6 +104,10 @@ private:
 
     QWidget *centralWidget;
     QListWidget *listWidget;
+    QWidget *propWidget;
+    QRadioButton *radioButtonAnno;
+    QRadioButton *radioButtonProp;
+    QCheckBox *checkBoxProps[6];
     QLabel* statusLabel;
     QString annotationSuffix;
     QDir imageFolder;
@@ -113,9 +123,12 @@ private:
     QVector<ImageAnnotation> history;
     QVector<ImageAnnotation> redoHistory;
     bool keepHistoryOnUndo;
+    QString historyMergeKey;
 
     bool changingPerspectiveHelper;
     int selectedPerspectiveHelperIndex;
+    int selectedBlockIndex; // -1 respects to `none`
+    int selectedCharIndex; // -1 respects to `all`
 };
 
 class QSoftSelectListWidget: public QListWidget {

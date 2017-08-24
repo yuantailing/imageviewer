@@ -22,6 +22,47 @@ ImageViewer::ImageViewer(QWidget *parent)
     connect(listWidget, SIGNAL(currentRowChanged(int)), this, SLOT(onListWidgetSelect()));
     connect(listWidget, SIGNAL(doubleClicked(QModelIndex)), this, SLOT(onListWidgetDoubleClicked(QModelIndex)));
 
+    QVBoxLayout *verticalLayout_1;
+    QVBoxLayout *verticalLayout_2;
+    QVBoxLayout *verticalLayout_3;
+    char const *propsText[sizeof(checkBoxProps) / sizeof(*checkBoxProps)] = {
+            "(A)在背阴处",
+            "(S)部分被遮挡",
+            "(D)是立体的",
+            "(F)背景复杂（背景非纯色）",
+            "(Z)非规整印刷（例如手写）",
+            "(X)标记为“已标注属性”"
+    };
+    propWidget = new QWidget(centralWidget);
+    propWidget->setAutoFillBackground(true);
+    propWidget->installEventFilter(this);
+    verticalLayout_3 = new QVBoxLayout(propWidget);
+    verticalLayout_3->setSpacing(6);
+    verticalLayout_3->setContentsMargins(3, 3, 3, 3);
+    verticalLayout_1 = new QVBoxLayout();
+    verticalLayout_1->setSpacing(6);
+    radioButtonAnno = new QRadioButton(propWidget);
+    radioButtonAnno->setFocusPolicy(Qt::NoFocus);
+    radioButtonAnno->setChecked(true);
+    verticalLayout_1->addWidget(radioButtonAnno);
+    radioButtonProp = new QRadioButton(propWidget);
+    radioButtonProp->setFocusPolicy(Qt::NoFocus);
+    verticalLayout_1->addWidget(radioButtonProp);
+    verticalLayout_3->addLayout(verticalLayout_1);
+    verticalLayout_2 = new QVBoxLayout();
+    verticalLayout_2->setSpacing(6);
+    for (size_t i = 0; i < sizeof(checkBoxProps) / sizeof(*checkBoxProps); i++) {
+        checkBoxProps[i] = new QCheckBox(propWidget);
+        checkBoxProps[i]->setEnabled(false);
+        verticalLayout_2->addWidget(checkBoxProps[i]);
+        checkBoxProps[i]->setText(QApplication::translate("MainWindow", propsText[i], Q_NULLPTR));
+    }
+    verticalLayout_3->addLayout(verticalLayout_2);
+    radioButtonAnno->setText(QApplication::translate("MainWindow", "标注", Q_NULLPTR));
+    radioButtonProp->setText(QApplication::translate("MainWindow", "属性", Q_NULLPTR));
+    connect(radioButtonAnno, SIGNAL(toggled(bool)), this, SLOT(update()));
+    connect(radioButtonProp, SIGNAL(toggled(bool)), this, SLOT(update()));
+
     controlPressed = false;
     shiftPressed = false;
     spacePressed = false;
@@ -33,6 +74,8 @@ ImageViewer::ImageViewer(QWidget *parent)
     resetHistory();
     changingPerspectiveHelper = false;
     selectedPerspectiveHelperIndex = -1;
+    selectedBlockIndex = -1;
+    selectedCharIndex = -1;
 
     setWindowTitle(tr("Image Viewer"));
     setCentralWidget(centralWidget);
@@ -55,6 +98,12 @@ void ImageViewer::resizeEvent(QResizeEvent *event) {
     x1 = qMax(x1, 0);
     h = qMax(h, 30);
     listWidget->setGeometry(x1, y1, w, h);
+
+    int prop_w = 170;
+    int prop_h = 160;
+    int gap_w = 5;
+    propWidget->setGeometry(QRect(x1 - gap_w - prop_w, y1, prop_w, prop_h));
+
     QMainWindow::resizeEvent(event);
 }
 
@@ -66,16 +115,9 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
     if (!scaledImage.isNull())
         painter.drawImage(imageLeftTop, scaledImage);
 
-    // 确定选中的Block
-    int selectedBlock = -1;
-    if (!listWidget->selectedItems().isEmpty())
-        selectedBlock = listWidget->row(listWidget->selectedItems().first());
-
-    auto paintCharacter = [&](QPolygonF const &box, QString const &text, qreal polyOpacity, qreal charOpacity,
-            QColor penColor, QColor/* brushColor*/, QColor charColor, qreal penWidth) {
-        QPolygonF polyScreen;
-        foreach (QPointF p, box)
-            polyScreen.append(toScreenUV(p));
+    auto paintCharacter = [&](QPolygonF const &box, QString const &text, qreal polyOpacity, qreal charBgOpacity, qreal charOpacity,
+            QColor penColor, QColor brushColor, QColor charColor, qreal penWidth) {
+        QPolygonF polyScreen = toScreenPoly(box);
 
         // 字符包围盒
         painter.setOpacity(polyOpacity);
@@ -85,9 +127,9 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
 
         // 打印文字
         if (!text.isEmpty()) {
-            painter.setOpacity(0.2);
+            painter.setOpacity(charBgOpacity);
             painter.setPen(Qt::NoPen);
-            painter.setBrush(QBrush(Qt::yellow));
+            painter.setBrush(brushColor);
             painter.drawPolygon(polyScreen);
 
             painter.setOpacity(charOpacity);
@@ -95,65 +137,123 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
             painter.setBrush(Qt::NoBrush);
             QRectF bounding = polyScreen.boundingRect();
             qreal fontSize = qMax(qMin(bounding.width() / text.length(), bounding.height()) * 0.67, 5.0);
-            painter.setFont(QFont("Arial", fontSize, QFont::Bold));
+            painter.setFont(QFont("Arial", fontSize));
             painter.drawText(bounding, Qt::AlignCenter, text);
         }
     };
 
-    if (!controlPressed || !shiftPressed)
-        for (int i = 0; i < anno.blocks.size(); i++) {
-            BlockAnnotation const &block(anno.blocks[i]);
-            qreal polyOpacity = i == selectedBlock ? 1.0 : 0.6;
-            qreal charOpacity = i == selectedBlock ? 1.0 : 1.0;
+    if (radioButtonAnno->isChecked()) {
+        // 确定选中的Block
+        int listSelectedBlock = -1;
+        if (!listWidget->selectedItems().isEmpty())
+            listSelectedBlock = listWidget->row(listWidget->selectedItems().first());
 
-            // 绘制辅助图层
-            painter.setOpacity(polyOpacity);
-            painter.setPen(QPen(Qt::blue, 3.0));
-            painter.setBrush(Qt::NoBrush);
-            foreach (QPolygonF const &poly, block.getHelperPoly())
-                painter.drawPolygon(toScreenPoly(poly));
+        if (!controlPressed || !shiftPressed)
+            for (int i = 0; i < anno.blocks.size(); i++) {
+                BlockAnnotation const &block(anno.blocks[i]);
+                qreal polyOpacity = i == listSelectedBlock ? 1.0 : 0.6;
+                qreal charBgOpacity = i == listSelectedBlock ? 0.3 : 0.1;
+                qreal charOpacity = i == listSelectedBlock ? 1.0 : 1.0;
 
-            // 绘制正在标注的字符区域
-            painter.setOpacity(polyOpacity);
-            painter.setPen(QPen(Qt::green, 1.0));
-            painter.setBrush(Qt::NoBrush);
-            foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
-                painter.drawPolygon(toScreenPoly(poly));
+                // 绘制辅助图层
+                painter.setOpacity(polyOpacity);
+                painter.setPen(QPen(Qt::blue, 3.0));
+                painter.setBrush(Qt::NoBrush);
+                foreach (QPolygonF const &poly, block.getHelperPoly())
+                    painter.drawPolygon(toScreenPoly(poly));
 
-            // 绘制已标注的字符区域
-            foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
-                paintCharacter(charAnno.box, charAnno.text, polyOpacity, charOpacity, Qt::green, Qt::red, Qt::black, 1.0);
+                // 绘制正在标注的字符区域
+                painter.setOpacity(polyOpacity);
+                painter.setPen(QPen(Qt::green, 1.0));
+                painter.setBrush(Qt::NoBrush);
+                foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
+                    painter.drawPolygon(toScreenPoly(poly));
+
+                // 绘制已标注的字符区域
+                foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
+                    QColor penColor = Qt::green;
+                    qreal penWidth = 1.0;
+                    if (0 != charAnno.props.value("mask", 0)) {
+                        penColor = Qt::red;
+                        penWidth = 2.0;
+                    }
+                    paintCharacter(charAnno.box, charAnno.text, polyOpacity, charBgOpacity, charOpacity, penColor, Qt::yellow, Qt::black, penWidth);
+                }
+            }
+
+        // 绘制用户关注的焦点（上一次鼠标点击位置）
+        if (!controlPressed || !shiftPressed) {
+            if ((anno.focusPoint - QPointF(0, 0)).manhattanLength() > 0.001) {
+                painter.setOpacity(0.8);
+                painter.setPen(QPen(Qt::red));
+                QPointF foc = toScreenUV(anno.focusPoint);
+                qreal len = 5.0;
+                QLineF lineH = QLineF(foc + QPointF(-len, 0), foc + QPointF(len, 0));
+                QLineF lineV = QLineF(foc + QPointF(0, -len), foc + QPointF(0, len));
+                painter.drawLine(lineH);
+                painter.drawLine(lineV);
             }
         }
 
-    // 绘制用户关注的焦点（上一次鼠标点击位置）
-    if (!controlPressed || !shiftPressed) {
-        if ((anno.focusPoint - QPointF(0, 0)).manhattanLength() > 0.001) {
-            painter.setOpacity(0.8);
-            painter.setPen(QPen(Qt::red));
-            QPointF foc = toScreenUV(anno.focusPoint);
-            qreal len = 5.0;
-            QLineF lineH = QLineF(foc + QPointF(-len, 0), foc + QPointF(len, 0));
-            QLineF lineV = QLineF(foc + QPointF(0, -len), foc + QPointF(0, len));
-            painter.drawLine(lineH);
-            painter.drawLine(lineV);
+        // 绘制用户选中的编辑点
+        if (selectedPerspectiveHelperIndex >= 0) {
+            QPointF *points = lastPerspectiveHelperPoints();
+            if (points) {
+                QPointF p = points[selectedPerspectiveHelperIndex];
+                p = toScreenUV(p);
+                painter.setOpacity(0.8);
+                painter.setPen(QPen(Qt::red));
+                painter.drawEllipse(p, 6.0, 6.0);
+            }
         }
-    }
 
-    // 绘制用户选中的编辑点
-    if (selectedPerspectiveHelperIndex >= 0) {
-        QPointF *points = lastPerspectiveHelperPoints();
-        if (points) {
-            QPointF p = points[selectedPerspectiveHelperIndex];
-            p = toScreenUV(p);
-            painter.setOpacity(0.8);
-            painter.setPen(QPen(Qt::red));
-            painter.drawEllipse(p, 6.0, 6.0);
-        }
-    }
+        // 绘制Tips
+        statusLabel->setText(anno.getTips());
+    } else if (radioButtonProp->isChecked()) {
+        if (!controlPressed || !shiftPressed)
+            for (int i = 0; i < anno.blocks.size(); i++) {
+                BlockAnnotation const &block(anno.blocks[i]);
+                qreal polyOpacity = 0.8;
+                qreal bgOpacity = 0.15;
 
-    // 绘制Tips
-    statusLabel->setText(anno.getTips());
+                // 绘制辅助图层
+                painter.setOpacity(polyOpacity);
+                painter.setPen(QPen(Qt::blue, 3.0));
+                painter.setBrush(Qt::NoBrush);
+                foreach (QPolygonF const &poly, block.getHelperPoly())
+                    painter.drawPolygon(toScreenPoly(poly));
+
+                // 绘制正在标注的字符区域
+                painter.setOpacity(polyOpacity);
+                painter.setPen(QPen(Qt::green, 1.0));
+                painter.setBrush(Qt::NoBrush);
+                foreach (QPolygonF const &poly, block.getPendingCharacterPoly())
+                    painter.drawPolygon(toScreenPoly(poly));
+
+                // 绘制已标注的字符区域
+                for (int j = 0; j < block.characters.size(); j++) {
+                    CharacterAnnotation const &charAnno(block.characters[j]);
+                    qreal opacity0 = polyOpacity * (0 == charAnno.props.value("pass", 0) ? 1.0 : 0.2);
+                    QColor aroundColor(0 == charAnno.props.value("mask", 0) ? Qt::green : Qt::red);
+                    if (i == selectedBlockIndex && (-1 == selectedCharIndex || j == selectedCharIndex)) {
+                        painter.setOpacity(bgOpacity);
+                        painter.setPen(Qt::NoPen);
+                        painter.setBrush(Qt::yellow);
+                        painter.drawPolygon(toScreenPoly(charAnno.box));
+                        painter.setOpacity(opacity0);
+                        painter.setPen(QPen(aroundColor, 2.0));
+                        painter.setBrush(Qt::NoBrush);
+                        painter.drawPolygon(toScreenPoly(charAnno.box));
+                    } else {
+                        painter.setOpacity(opacity0);
+                        painter.setPen(QPen(aroundColor, 1.0));
+                        painter.setBrush(Qt::NoBrush);
+                        painter.drawPolygon(toScreenPoly(charAnno.box));
+                    }
+                }
+            }
+        statusLabel->setText(QString(""));
+    }
 
     painter.end();
     QMainWindow::paintEvent(event);
@@ -168,15 +268,6 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
     } else if (event->key() == Qt::Key_Shift) {
         shiftPressed = true;
         updatePendingAnnotation();
-    } else if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-        bool annoChanged = anno.onEnterPressed();
-        if (annoChanged) {
-            addHistoryPoint();
-            updateBlockList();
-            update();
-        } else {
-            inputStringToAnnotation(anno.blocks.size() - 1);
-        }
     } else if (event->key() == Qt::Key_Left || event->key() == Qt::Key_Right) {
         int current = imagesInFolder.indexOf(QFileInfo(imageFileName).fileName());
         if (event->key() == Qt::Key_Left) {
@@ -186,6 +277,38 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             if (current >= 0 && current + 1 < imagesInFolder.size())
                 loadFile(imageFolder.filePath(imagesInFolder[current + 1]));
         }
+    } else if (radioButtonAnno->isChecked()) {
+        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+            bool annoChanged = anno.onEnterPressed();
+            if (annoChanged) {
+                addHistoryPoint();
+                updateBlockList();
+                update();
+            } else {
+                inputStringToAnnotation(anno.blocks.size() - 1);
+            }
+        } else if (event->key() == Qt::Key_D) {
+            QString maskRes = anno.onMask(anno.blocks.size() - 1);
+            if (maskRes.isEmpty()) {
+                anno.onNewBlock();
+                addHistoryPoint();
+                updateBlockList();
+                update();
+            } else {
+                QMessageBox::information(this, tr("Image Viewer"), maskRes);
+            }
+        }
+    } else if (radioButtonProp->isChecked()) {
+        QMap<int, int> key2index({{Qt::Key_A, 0},
+                                  {Qt::Key_S, 1},
+                                  {Qt::Key_D, 2},
+                                  {Qt::Key_F, 3},
+                                  {Qt::Key_Z, 4},
+                                  {Qt::Key_X, 5}
+                                 });
+        int index = key2index.value(event->key(), -1);
+        if (-1 != index)
+            changePropStatus(index, checkBoxProps[index]->checkState() != Qt::Checked);
     }
     QMainWindow::keyPressEvent(event);
 }
@@ -204,53 +327,88 @@ void ImageViewer::keyReleaseEvent(QKeyEvent *event) {
 }
 
 void ImageViewer::wheelEvent(QWheelEvent *event) {
-    if (controlPressed || spacePressed) {
-        if (event->delta() > 0) {
-            zoomIn();
-        } else if (event->delta() < 0) {
-            zoomOut();
-        }
+    if (event->delta() > 0) {
+        zoomIn();
+    } else if (event->delta() < 0) {
+        zoomOut();
     }
     QMainWindow::wheelEvent(event);
 }
 
 void ImageViewer::mousePressEvent(QMouseEvent *event) {
+    auto selectBlock = [&](bool wholeBlock) {
+        QPointF p(toImageUV(event->pos()));
+        selectedBlockIndex = selectedCharIndex = -1;
+        qreal mindist = 0;
+        for (int i = 0; i < anno.blocks.size(); i++) {
+            BlockAnnotation const &blockAnno(anno.blocks[i]);
+            for (int j = 0; j < blockAnno.characters.size(); j++) {
+                CharacterAnnotation const &charAnno(blockAnno.characters[j]);
+                if (charAnno.box.containsPoint(p, Qt::OddEvenFill)) {
+                    qreal dist = (p - charAnno.box.boundingRect().center()).manhattanLength();
+                    if (-1 == selectedBlockIndex || dist < mindist) {
+                        selectedBlockIndex = i;
+                        if (!wholeBlock)
+                            selectedCharIndex = j;
+                        mindist = dist;
+                    }
+                }
+            }
+        }
+    };
+
     if (event->button() == Qt::LeftButton) {
         mousePressed = true;
         if (controlPressed || spacePressed) {
             draggingImage = true;
-        } else if (selectedPerspectiveHelperIndex >= 0) {
-            changingPerspectiveHelper = true;
-        } else {
-            drawingLabel = true;
-            anno.onStartPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
+        } else if (radioButtonAnno->isChecked()) {
+            if (selectedPerspectiveHelperIndex >= 0) {
+                changingPerspectiveHelper = true;
+            } else {
+                drawingLabel = true;
+                anno.onStartPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
+                update();
+            }
+        }
+        if (radioButtonProp->isChecked()) {
+            draggingImage = true;
+            selectBlock(false);
+            listWidget->setCurrentRow(selectedBlockIndex);
+            updatePropsCheckBox();
             update();
         }
-        mouseLastPos = event->pos();
     }
+    if (event->button() == Qt::RightButton) {
+        if (radioButtonProp->isChecked()) {
+            selectBlock(true);
+            listWidget->setCurrentRow(selectedBlockIndex);
+            updatePropsCheckBox();
+            update();
+        }
+    }
+    mouseLastPos = event->pos();
     QMainWindow::mousePressEvent(event);
 }
 
 void ImageViewer::mouseMoveEvent(QMouseEvent *event) {
     if (draggingImage) {
         setLocation(imageLeftTop + event->pos() - mouseLastPos);
-    } else {
-        if (changingPerspectiveHelper) {
-            Q_ASSERT(selectedPerspectiveHelperIndex >= 0);
-            QPointF *points = lastPerspectiveHelperPoints();
-            if (points) {
-                points[selectedPerspectiveHelperIndex] = toImageUV(event->pos());
-            }
-        } else {
-            selectedPerspectiveHelperIndex = -1;
-            QPointF *points = lastPerspectiveHelperPoints();
-            if (points) {
-                for (int i = 0; i < 4; i++) {
-                    QPointF delta = event->pos() - toScreenUV(points[i]);
-                    if (QPointF::dotProduct(delta, delta) < 49.001) {
-                        selectedPerspectiveHelperIndex = i;
-                        break;
-                    }
+    } else if (changingPerspectiveHelper) {
+        Q_ASSERT(selectedPerspectiveHelperIndex >= 0);
+        QPointF *points = lastPerspectiveHelperPoints();
+        if (points) {
+            anno.focusPoint = points[selectedPerspectiveHelperIndex] = toImageUV(event->pos());
+        }
+        update();
+    } else if (radioButtonAnno->isChecked()) {
+        selectedPerspectiveHelperIndex = -1;
+        QPointF *points = lastPerspectiveHelperPoints();
+        if (points) {
+            for (int i = 0; i < 4; i++) {
+                QPointF delta = event->pos() - toScreenUV(points[i]);
+                if (QPointF::dotProduct(delta, delta) < 49.001) {
+                    selectedPerspectiveHelperIndex = i;
+                    break;
                 }
             }
         }
@@ -267,7 +425,7 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
         } else if (changingPerspectiveHelper) {
             addHistoryPoint(2); // replace last history
             update();
-        } else {
+        } else if (drawingLabel) {
             int status = anno.onEndPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
             if (status == 2) {
                 // do nothing
@@ -302,6 +460,14 @@ void ImageViewer::dropEvent(QDropEvent *event){
 void ImageViewer::closeEvent(QCloseEvent *event) {
     save();
     QMainWindow::closeEvent(event);
+}
+
+bool ImageViewer::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == propWidget) {
+        if (nullptr != dynamic_cast<QMouseEvent *>(event))
+            return true;
+    }
+    return false;
 }
 
 void ImageViewer::createActions() {
@@ -392,6 +558,7 @@ void ImageViewer::loadFile(QString const &fileName) {
     resetLocation();
     updateScaledImage();
     resetHistory();
+    selectedBlockIndex = selectedCharIndex = -1;
     QFile file(annotationFileName(imageFileName));
     if (file.open(QIODevice::ReadOnly)) {
         QDataStream stream(&file);
@@ -437,6 +604,7 @@ void ImageViewer::resetHistory() {
 }
 
 void ImageViewer::addHistoryPoint(int flag) {
+    historyMergeKey = "";
     if (flag == 1) {
         keepHistoryOnUndo = true;
         return;
@@ -449,6 +617,91 @@ void ImageViewer::addHistoryPoint(int flag) {
     }
     redoHistory.clear();
     history.append(anno);
+}
+
+void ImageViewer::addHistoryPoint(QString const &mergeKey) {
+    if (!historyMergeKey.isEmpty() && mergeKey == historyMergeKey) {
+        addHistoryPoint(2);
+    } else {
+        addHistoryPoint();
+    }
+    historyMergeKey = mergeKey;
+}
+
+static QVector<QString> radioIdx2propname({
+    "shadow", "covered", "raised", "bgcomplex", "handwritten", "pass"
+});
+
+void ImageViewer::changePropStatus(int index, bool checked) {
+    if (index < 0 || radioIdx2propname.size() <= index)
+        return;
+    QString const &propname(radioIdx2propname[index]);
+    if (selectedBlockIndex < 0 || anno.blocks.size() <= selectedBlockIndex)
+        return;
+    BlockAnnotation &blockAnno(anno.blocks[selectedBlockIndex]);
+    if (selectedCharIndex == -1) {
+        for (CharacterAnnotation &charAnno: blockAnno.characters) {
+            if (checked)
+                charAnno.props.insert(propname, 1);
+            else
+                charAnno.props.remove(propname);
+            if (propname != "pass")
+                charAnno.props.insert("pass", 1);
+        }
+    } else {
+        if (selectedCharIndex < 0 || blockAnno.characters.size() <= selectedCharIndex)
+            return;
+        CharacterAnnotation &charAnno(blockAnno.characters[selectedCharIndex]);
+        if (checked)
+            charAnno.props.insert(propname, 1);
+        else
+            charAnno.props.remove(propname);
+        if (propname != "pass")
+            charAnno.props.insert("pass", 1);
+    }
+    addHistoryPoint(QString("propblk=%1&propchar=%2").arg(selectedBlockIndex, selectedCharIndex));
+    updatePropsCheckBox();
+    update();
+}
+
+void ImageViewer::updatePropsCheckBox() {
+    for (size_t i = 0; i < sizeof(checkBoxProps) / sizeof(*checkBoxProps); i++)
+        checkBoxProps[i]->setCheckState(Qt::Unchecked);
+    if (selectedBlockIndex < 0 || anno.blocks.size() <= selectedBlockIndex)
+        return;
+    BlockAnnotation const &blockAnno(anno.blocks[selectedBlockIndex]);
+    if (selectedCharIndex == -1) {
+        for (int i = 0; i < radioIdx2propname.size(); i++) {
+            if (i < (int)(sizeof(checkBoxProps) / sizeof(*checkBoxProps))) {
+                QString const &propname(radioIdx2propname[i]);
+                bool has0 = false, has1 = false;
+                for (CharacterAnnotation const &charAnno: blockAnno.characters) {
+                    if (0 == charAnno.props.value(propname, 0))
+                        has0 = true;
+                    else
+                        has1 = true;
+                }
+                if (!has1)
+                    checkBoxProps[i]->setCheckState(Qt::Unchecked);
+                else if (has0)
+                    checkBoxProps[i]->setCheckState(Qt::PartiallyChecked);
+                else
+                    checkBoxProps[i]->setCheckState(Qt::Checked);
+            }
+        }
+    } else {
+        if (selectedCharIndex < 0 || blockAnno.characters.size() <= selectedCharIndex)
+            return;
+        CharacterAnnotation const &charAnno(blockAnno.characters[selectedCharIndex]);
+        for (int i = 0; i < radioIdx2propname.size(); i++) {
+            if (i < (int)(sizeof(checkBoxProps) / sizeof(*checkBoxProps))) {
+                QString const &propname(radioIdx2propname[i]);
+                if (0 != charAnno.props.value(propname, 0))
+                    checkBoxProps[i]->setCheckState(Qt::Checked);
+            }
+        }
+    }
+
 }
 
 void ImageViewer::updateBlockList() {
@@ -464,8 +717,11 @@ void ImageViewer::updateBlockList() {
             else
                 text += charAnno.text;
         }
-        if (text.isEmpty())
+        if (block.characters.size() > 0 && 0 != block.characters.first().props.value("mask", 0)) {
+            text = tr("<mask>");
+        } else if (text.isEmpty()) {
             text = tr("<empty>");
+        }
         listWidget->addItem(tr("%1. %2").arg(i + 1).arg(text));
     }
 }
@@ -505,7 +761,7 @@ void ImageViewer::inputStringToAnnotation(int index) {
                 originText += charAnno.text;
             }
         }
-        QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字（或英文单词）").arg(wordNeeded),
+        QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字").arg(wordNeeded),
                                              QLineEdit::Normal, originText, &ok);
         if (ok) {
             QString inputRes = anno.onInputString(text, index);
@@ -690,6 +946,10 @@ void ImageViewer::resetLocation(QSize size) {
 }
 
 void ImageViewer::onListWidgetSelect() {
+    if (0 <= listWidget->currentRow() && selectedBlockIndex != listWidget->currentRow()) {
+        selectedBlockIndex = listWidget->currentRow();
+        selectedCharIndex = -1;
+    }
     update();
 }
 

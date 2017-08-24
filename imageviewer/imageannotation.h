@@ -2,6 +2,7 @@
 #define IMAGEANNOTATION_HPP
 
 #include <QVector>
+#include <QMap>
 #include <QString>
 #include <QPolygonF>
 #include <QLineF>
@@ -17,6 +18,7 @@ class CharacterAnnotation {
 public:
     QPolygonF box;
     QString text;
+    QMap<QString, int> props;
 };
 
 class PerspectiveHelper {
@@ -99,6 +101,8 @@ public:
 
     QString onInputString(QString const &s);
 
+    QString onMask();
+
     QVector<QPolygonF> getHelperPoly() const {
         if (helperType == PERSPECTIVE_HELPER)
             return perspectiveHelper.getHelperPoly();
@@ -177,6 +181,11 @@ public:
     QString onInputString(QString const &s, int index) {
         Q_ASSERT(0 <= index && index < blocks.size());
         return blocks[index].onInputString(s);
+    }
+
+    QString onMask(int index) {
+        Q_ASSERT(0 <= index && index < blocks.size());
+        return blocks[index].onMask();
     }
 
     void onNewBlock() {

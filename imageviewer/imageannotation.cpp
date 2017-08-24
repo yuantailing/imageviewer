@@ -289,6 +289,22 @@ QString BlockAnnotation::onInputString(QString const &s) {
     return res;
 }
 
+QString BlockAnnotation::onMask() {
+    QString res(QObject::tr("未实现此功能"));
+    if (helperType == PERSPECTIVE_HELPER) {
+        if (!perspectiveHelper.onEnterPressed(this)) {
+            res = QObject::tr("请在完成4个顶点时标记mask。不能在已框文字后标记mask");
+        } else {
+            QMap<QString, int> m;
+            qDebug() << m["A"];
+            qDebug() << m.size();
+            characters.first().props["mask"] = 1;
+            res = QString("");
+        }
+    }
+    return res;
+}
+
 QDataStream &operator <<(QDataStream &stream, CharacterAnnotation const &anno) {
     stream << anno.box;
     stream << anno.text;
