@@ -233,19 +233,19 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
                 // 绘制已标注的字符区域
                 for (int j = 0; j < block.characters.size(); j++) {
                     CharacterAnnotation const &charAnno(block.characters[j]);
-                    qreal opacity0 = polyOpacity * (0 == charAnno.props.value("pass", 0) ? 1.0 : 0.2);
-                    QColor aroundColor(0 == charAnno.props.value("mask", 0) ? Qt::green : Qt::red);
+                    QColor aroundColor(0 == charAnno.props.value("mask", 0) ?
+                                           0 == charAnno.props.value("pass", 0) ? Qt::green : Qt::blue : Qt::red);
                     if (i == selectedBlockIndex && (-1 == selectedCharIndex || j == selectedCharIndex)) {
                         painter.setOpacity(bgOpacity);
                         painter.setPen(Qt::NoPen);
                         painter.setBrush(Qt::yellow);
                         painter.drawPolygon(toScreenPoly(charAnno.box));
-                        painter.setOpacity(opacity0);
+                        painter.setOpacity(polyOpacity);
                         painter.setPen(QPen(aroundColor, 2.0));
                         painter.setBrush(Qt::NoBrush);
                         painter.drawPolygon(toScreenPoly(charAnno.box));
                     } else {
-                        painter.setOpacity(opacity0);
+                        painter.setOpacity(polyOpacity);
                         painter.setPen(QPen(aroundColor, 1.0));
                         painter.setBrush(Qt::NoBrush);
                         painter.drawPolygon(toScreenPoly(charAnno.box));
@@ -564,8 +564,12 @@ void ImageViewer::loadFile(QString const &fileName) {
         QDataStream stream(&file);
         stream >> anno;
         bool okAnno = stream.status() == QDataStream::Ok;
-        stream >> history;
-        bool okHistory = stream.status() == QDataStream::Ok;
+        QByteArray array;
+        stream >> array;
+        array = qUncompress(array);
+        QDataStream st2(&array, QIODevice::ReadOnly);
+        st2 >> history;
+        bool okHistory = stream.status() == QDataStream::Ok && st2.status() == QDataStream::Ok;
         file.close();
         if (!okHistory) {
             file.copy(file.fileName() + ".bak");
@@ -837,7 +841,10 @@ void ImageViewer::save() {
     }
     QDataStream stream(&file1);
     stream << anno;
-    stream << history;
+    QByteArray array;
+    QDataStream st2(&array, QIODevice::WriteOnly);
+    st2 << history;
+    stream << qCompress(array);
     file1.close();
     file0.remove();
     if (!file1.rename(file0.fileName())) {

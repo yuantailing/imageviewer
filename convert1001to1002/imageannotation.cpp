@@ -312,7 +312,6 @@ QDataStream &operator <<(QDataStream &stream, CharacterAnnotation const &anno) {
 QDataStream &operator >>(QDataStream &stream, CharacterAnnotation &anno) {
     stream >> anno.box;
     stream >> anno.text;
-    stream >> anno.props;
     return stream;
 }
 
@@ -372,7 +371,15 @@ QDataStream &operator <<(QDataStream &stream, ImageAnnotation const &anno) {
 QDataStream &operator >>(QDataStream &stream, ImageAnnotation &anno) {
     quint32 version;
     stream >> version;
-    if (version != (quint32)anno.VERSION) {
+    if (version == 0x1000) {
+        QDataStream::Version streamVersion = static_cast<QDataStream::Version>(stream.version());
+        stream.setVersion(QDataStream::Qt_5_2);
+        stream >> anno.blocks;
+        anno.focusPoint = QPointF(0, 0);
+        stream.setVersion(streamVersion);
+        return stream;
+    }
+    if (version != (quint32)0x1001) {
         stream.setStatus(QDataStream::ReadCorruptData);
         return stream;
     }
