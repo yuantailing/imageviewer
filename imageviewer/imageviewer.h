@@ -129,7 +129,22 @@ private:
     int selectedPerspectiveHelperIndex;
     int selectedBlockIndex; // -1 respects to `none`
     int selectedCharIndex; // -1 respects to `all`
+
+    friend class PropCheckReciever;
 };
+
+
+class PropCheckReciever: public QObject {
+    Q_OBJECT
+public:
+    PropCheckReciever(ImageViewer *parent, int idx);
+    ~PropCheckReciever();
+private slots:
+    void changeCheckState(bool checked);
+private:
+    int idx;
+};
+
 
 class QSoftSelectListWidget: public QListWidget {
     Q_OBJECT

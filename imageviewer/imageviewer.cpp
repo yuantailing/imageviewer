@@ -27,8 +27,8 @@ ImageViewer::ImageViewer(QWidget *parent)
     QVBoxLayout *verticalLayout_3;
     char const *propsText[sizeof(checkBoxProps) / sizeof(*checkBoxProps)] = {
             "(A)在背阴处",
-            "(S)部分被遮挡",
-            "(D)是立体的",
+            "(S)被部分遮挡",
+            "(D)是立体的（有厚度）",
             "(F)背景复杂（背景非纯色）",
             "(Z)非规整印刷（例如手写）",
             "(X)标记为“已标注属性”"
@@ -51,11 +51,13 @@ ImageViewer::ImageViewer(QWidget *parent)
     verticalLayout_3->addLayout(verticalLayout_1);
     verticalLayout_2 = new QVBoxLayout();
     verticalLayout_2->setSpacing(6);
+
     for (size_t i = 0; i < sizeof(checkBoxProps) / sizeof(*checkBoxProps); i++) {
         checkBoxProps[i] = new QCheckBox(propWidget);
-        checkBoxProps[i]->setEnabled(false);
+        checkBoxProps[i]->setFocusPolicy(Qt::NoFocus);
         verticalLayout_2->addWidget(checkBoxProps[i]);
         checkBoxProps[i]->setText(QApplication::translate("MainWindow", propsText[i], Q_NULLPTR));
+        connect(checkBoxProps[i], SIGNAL(clicked(bool)), new PropCheckReciever(this, i), SLOT(changeCheckState(bool)));
     }
     verticalLayout_3->addLayout(verticalLayout_2);
     radioButtonAnno->setText(QApplication::translate("MainWindow", "标注", Q_NULLPTR));
@@ -137,7 +139,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
             painter.setBrush(Qt::NoBrush);
             QRectF bounding = polyScreen.boundingRect();
             qreal fontSize = qMax(qMin(bounding.width() / text.length(), bounding.height()) * 0.67, 5.0);
-            painter.setFont(QFont("Arial", fontSize));
+            painter.setFont(QFont("Arial", fontSize, QFont::Bold));
             painter.drawText(bounding, Qt::AlignCenter, text);
         }
     };
@@ -152,7 +154,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
             for (int i = 0; i < anno.blocks.size(); i++) {
                 BlockAnnotation const &block(anno.blocks[i]);
                 qreal polyOpacity = i == listSelectedBlock ? 1.0 : 0.6;
-                qreal charBgOpacity = i == listSelectedBlock ? 0.3 : 0.1;
+                qreal charBgOpacity = i == listSelectedBlock ? 0.3 : 0.07;
                 qreal charOpacity = i == listSelectedBlock ? 1.0 : 1.0;
 
                 // 绘制辅助图层
@@ -171,13 +173,16 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
 
                 // 绘制已标注的字符区域
                 foreach (CharacterAnnotation const &charAnno, block.getCharacterAnnotation()) {
+                    QString text = charAnno.text;
                     QColor penColor = Qt::green;
                     qreal penWidth = 1.0;
                     if (0 != charAnno.props.value("mask", 0)) {
                         penColor = Qt::red;
                         penWidth = 2.0;
+                        text = " ";
+                        charBgOpacity = i == listSelectedBlock ? 0.3 : 0;
                     }
-                    paintCharacter(charAnno.box, charAnno.text, polyOpacity, charBgOpacity, charOpacity, penColor, Qt::yellow, Qt::black, penWidth);
+                    paintCharacter(charAnno.box, text, polyOpacity, charBgOpacity, charOpacity, penColor, Qt::yellow, Qt::black, penWidth);
                 }
             }
 
@@ -256,6 +261,8 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
     }
 
     painter.end();
+    updatePropsCheckBox();
+    updateBlockList();
     QMainWindow::paintEvent(event);
 }
 
@@ -282,7 +289,6 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             bool annoChanged = anno.onEnterPressed();
             if (annoChanged) {
                 addHistoryPoint();
-                updateBlockList();
                 update();
             } else {
                 inputStringToAnnotation(anno.blocks.size() - 1);
@@ -292,7 +298,6 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             if (maskRes.isEmpty()) {
                 anno.onNewBlock();
                 addHistoryPoint();
-                updateBlockList();
                 update();
             } else {
                 QMessageBox::information(this, tr("Image Viewer"), maskRes);
@@ -374,7 +379,6 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
             draggingImage = true;
             selectBlock(false);
             listWidget->setCurrentRow(selectedBlockIndex);
-            updatePropsCheckBox();
             update();
         }
     }
@@ -382,7 +386,6 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
         if (radioButtonProp->isChecked()) {
             selectBlock(true);
             listWidget->setCurrentRow(selectedBlockIndex);
-            updatePropsCheckBox();
             update();
         }
     }
@@ -431,7 +434,6 @@ void ImageViewer::mouseReleaseEvent(QMouseEvent *event) {
                 // do nothing
             } else {
                 addHistoryPoint(status == 1 ? 1 : 0); // status: 0 normal, 1 weak
-                updateBlockList();
                 update();
             }
         }
@@ -584,7 +586,6 @@ void ImageViewer::loadFile(QString const &fileName) {
             addHistoryPoint();
         }
     }
-    updateBlockList();
     update();
 }
 
@@ -664,7 +665,6 @@ void ImageViewer::changePropStatus(int index, bool checked) {
             charAnno.props.insert("pass", 1);
     }
     addHistoryPoint(QString("propblk=%1&propchar=%2").arg(selectedBlockIndex, selectedCharIndex));
-    updatePropsCheckBox();
     update();
 }
 
@@ -709,10 +709,15 @@ void ImageViewer::updatePropsCheckBox() {
 }
 
 void ImageViewer::updateBlockList() {
-    listWidget->clear();
+    bool propsFinished = true;
+    while (listWidget->count() > anno.blocks.size())
+        listWidget->takeItem(listWidget->count() - 1);
+    while (listWidget->count() < anno.blocks.size())
+        listWidget->addItem("");
     for (int i = 0; i < anno.blocks.size(); i++) {
         BlockAnnotation const &block(anno.blocks[i]);
         QString text("");
+        bool hasProps = true;
         foreach (CharacterAnnotation const &charAnno, block.characters) {
             if (!text.isEmpty())
                 text += " ";
@@ -720,14 +725,24 @@ void ImageViewer::updateBlockList() {
                 text += tr("-");
             else
                 text += charAnno.text;
+            if (0 == charAnno.props.value("pass", 0))
+                hasProps = false;
         }
         if (block.characters.size() > 0 && 0 != block.characters.first().props.value("mask", 0)) {
             text = tr("<mask>");
         } else if (text.isEmpty()) {
             text = tr("<empty>");
+        } else {
+            if (hasProps) {
+                if (radioButtonProp->isChecked())
+                    text = tr("● ") + text;
+            } else {
+                propsFinished = false;
+            }
         }
-        listWidget->addItem(tr("%1. %2").arg(i + 1).arg(text));
+        listWidget->item(i)->setText(tr("%1. %2").arg(i + 1).arg(text));
     }
+    radioButtonProp->setText(propsFinished ? tr("属性（已全部标注）") : tr("属性"));
 }
 
 QPointF ImageViewer::toImageUV(QPoint screenUV) const {
@@ -765,7 +780,7 @@ void ImageViewer::inputStringToAnnotation(int index) {
                 originText += charAnno.text;
             }
         }
-        QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入%1个字").arg(wordNeeded),
+        QString text = QInputDialog::getText(this, tr("输入标注文字"), tr("输入 %1 个字").arg(wordNeeded),
                                              QLineEdit::Normal, originText, &ok);
         if (ok) {
             QString inputRes = anno.onInputString(text, index);
@@ -779,7 +794,6 @@ void ImageViewer::inputStringToAnnotation(int index) {
                     anno.onNewBlock();
             }
             addHistoryPoint();
-            updateBlockList();
             update();
         }
     }
@@ -869,7 +883,6 @@ void ImageViewer::undo() {
     history.pop_back();
     anno = history.back();
     updatePendingAnnotation();
-    updateBlockList();
     update();
 }
 
@@ -882,7 +895,6 @@ void ImageViewer::redo() {
     redoHistory.pop_back();
     anno = history.back();
     updatePendingAnnotation();
-    updateBlockList();
     update();
 }
 
@@ -900,7 +912,6 @@ void ImageViewer::deleteBlock() {
                 anno.onNewBlock();
             anno.blocks.remove(selectedBlock);
             addHistoryPoint();
-            updateBlockList();
             update();
         }
     }
@@ -965,6 +976,19 @@ void ImageViewer::onListWidgetDoubleClicked(QModelIndex index) {
         inputStringToAnnotation(index.row());
     }
 }
+
+
+/// PropCheckReciever
+
+PropCheckReciever::PropCheckReciever(ImageViewer *parent, int idx): QObject(parent), idx(idx) { }
+
+PropCheckReciever::~PropCheckReciever() { }
+
+void PropCheckReciever::changeCheckState(bool checked) {
+    ImageViewer *p = dynamic_cast<ImageViewer *>(parent());
+    p->changePropStatus(idx, checked);
+}
+
 
 /// QSoftSelectListWidget
 
