@@ -26,12 +26,18 @@ ImageViewer::ImageViewer(QWidget *parent)
     QVBoxLayout *verticalLayout_2;
     QVBoxLayout *verticalLayout_3;
     char const *propsText[sizeof(checkBoxProps) / sizeof(*checkBoxProps)] = {
-            "(A)在背阴处",
-            "(S)被部分遮挡",
-            "(D)是立体的（有厚度）",
-            "(F)背景复杂（背景非纯色）",
-            "(Z)非规整印刷（例如手写）",
-            "(X)标记为“已标注属性”"
+            "(Q)线遮挡",
+            "(W)面遮挡",
+            "(E)光影复杂",
+            "(R)背景复杂",
+            "(A)立体（有厚度）",
+            "(S)侧视（大于30度）",
+            "(D)扭曲",
+            "(F)旋转",
+            "(Z)艺术字（打印）",
+            "(X)手写（非打印）",
+            "(C)污损",
+            "(V)标记为\"已标注属性\""
     };
     propWidget = new QWidget(centralWidget);
     propWidget->setAutoFillBackground(true);
@@ -84,7 +90,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     this->setMouseTracking(true);
     centralWidget->setMouseTracking(true);
     this->setAcceptDrops(true);
-    this->setMinimumSize(480, 320);
+    this->setMinimumSize(480, 360);
     this->setWindowState(Qt::WindowMaximized);
 }
 
@@ -101,8 +107,8 @@ void ImageViewer::resizeEvent(QResizeEvent *event) {
     h = qMax(h, 30);
     listWidget->setGeometry(x1, y1, w, h);
 
-    int prop_w = 170;
-    int prop_h = 160;
+    int prop_w = 150;
+    int prop_h = 275;
     int gap_w = 5;
     propWidget->setGeometry(QRect(x1 - gap_w - prop_w, y1, prop_w, prop_h));
 
@@ -304,12 +310,18 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             }
         }
     } else if (radioButtonProp->isChecked()) {
-        QMap<int, int> key2index({{Qt::Key_A, 0},
-                                  {Qt::Key_S, 1},
-                                  {Qt::Key_D, 2},
-                                  {Qt::Key_F, 3},
-                                  {Qt::Key_Z, 4},
-                                  {Qt::Key_X, 5}
+        QMap<int, int> key2index({{Qt::Key_Q, 0},
+                                  {Qt::Key_W, 1},
+                                  {Qt::Key_E, 2},
+                                  {Qt::Key_R, 3},
+                                  {Qt::Key_A, 4},
+                                  {Qt::Key_S, 5},
+                                  {Qt::Key_D, 6},
+                                  {Qt::Key_F, 7},
+                                  {Qt::Key_Z, 8},
+                                  {Qt::Key_X, 9},
+                                  {Qt::Key_C, 10},
+                                  {Qt::Key_V, 11}
                                  });
         int index = key2index.value(event->key(), -1);
         if (-1 != index)
@@ -634,7 +646,7 @@ void ImageViewer::addHistoryPoint(QString const &mergeKey) {
 }
 
 static QVector<QString> radioIdx2propname({
-    "shadow", "covered", "raised", "bgcomplex", "handwritten", "pass"
+    "linecovered", "facecovered", "shadowcomplex", "bgcomplex", "raised", "perspective", "curved", "rotated", "wordart", "handwritten", "soiled", "pass"
 });
 
 void ImageViewer::changePropStatus(int index, bool checked) {
