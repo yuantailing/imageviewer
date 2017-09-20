@@ -107,7 +107,7 @@ private:
     QWidget *propWidget;
     QRadioButton *radioButtonAnno;
     QRadioButton *radioButtonProp;
-    QCheckBox *checkBoxProps[12];
+    QCheckBox *checkBoxProps[7];
     QLabel* statusLabel;
     QString annotationSuffix;
     QDir imageFolder;
