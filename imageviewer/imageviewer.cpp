@@ -28,7 +28,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     char const *propsText[sizeof(checkBoxProps) / sizeof(*checkBoxProps)] = {
             "(A)遮挡",
             "(S)背景复杂",
-            "(D)变形",
+            "(D)变形/旋转",
             "(F)立体字（有厚度）",
             "(Z)艺术字",
             "(X)手写",
