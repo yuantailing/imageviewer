@@ -107,6 +107,7 @@ private:
     QWidget *propWidget;
     QRadioButton *radioButtonAnno;
     QRadioButton *radioButtonProp;
+    QRadioButton *radioButtonInsp;
     QCheckBox *checkBoxProps[7];
     QLabel* statusLabel;
     QString annotationSuffix;
@@ -129,6 +130,9 @@ private:
     int selectedPerspectiveHelperIndex;
     int selectedBlockIndex; // -1 respects to `none`
     int selectedCharIndex; // -1 respects to `all`
+    QVector<QPair<QRect, QPoint> > respRegions;
+    int respDisplayYMaxOff;
+    int respDisplayYOff;
 
     friend class PropCheckReciever;
 };
