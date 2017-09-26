@@ -57,6 +57,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     verticalLayout_1->addWidget(radioButtonProp);
     radioButtonInsp = new QRadioButton(propWidget);
     radioButtonInsp->setFocusPolicy(Qt::NoFocus);
+    radioButtonInsp->setVisible(false);
     verticalLayout_1->addWidget(radioButtonInsp);
     verticalLayout_3->addLayout(verticalLayout_1);
     verticalLayout_2 = new QVBoxLayout();
@@ -411,6 +412,11 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
             if (current >= 0 && current + 1 < imagesInFolder.size())
                 loadFile(imageFolder.filePath(imagesInFolder[current + 1]));
         }
+    } else if (event->key() == Qt::Key_F8 || event->key() == Qt::Key_F12) {
+        static bool last_key_is_F8 = false;
+        if (last_key_is_F8 && event->key() == Qt::Key_F12)
+            radioButtonInsp->setVisible(true);
+        last_key_is_F8 = event->key() == Qt::Key_F8;
     } else if (radioButtonAnno->isChecked()) {
         if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
             bool annoChanged = anno.onEnterPressed();
