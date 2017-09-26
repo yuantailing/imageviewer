@@ -7,7 +7,6 @@
 #include <functional>
 #include "../imageviewer/imageannotation.h"
 
-static QTextStream cin(stdin);
 static QTextStream cout(stdout);
 
 bool eachFile(QDir dir, std::function<bool(QString)> const &cb, QStringList const &nameFilters) {
@@ -35,37 +34,16 @@ bool eachFile(QDir dir, std::function<bool(QString)> const &cb, QStringList cons
 class CharCounter {
 public:
     CharCounter() {
-        sumNumBlock = sumNumCharacter = idx = 0;
-        cout << QString("%1 %2 %3 %4  %5").arg("#", 5).
-                arg("ID", 10).
-                arg("#Blk", 6).
-                arg("#Char", 6).
-                arg("Folder") << endl;
+        top = 0;
+        Statistics::printTitle();
     }
     ~CharCounter() {
-        cout << QString("%1 %2 %3 %4  %5").arg("#", 5).
-                arg("Total", 10).
-                arg(sumNumBlock, 6).
-                arg(sumNumCharacter, 6).
-                arg("") << endl;
-        for (auto it = folderCount.begin(); it != folderCount.end(); it++) {
-            cout << QString("%1 %2 %3 %4  %5").arg("#", 5).
-                    arg("sum", 10).
-                    arg(it.value().first, 6).
-                    arg(it.value().second, 6).
-                    arg(it.key()) << endl;
+        Statistics total;
+        for (QMap<QString, Statistics>::iterator it = folderStat.begin(); it != folderStat.end(); it++) {
+            it.value().print("", "#", it.key());
+            total = total + it.value();
         }
-
-        QVector<QPair<QString, int> > a;
-        for (auto it = bucket.begin(); it != bucket.end(); it++)
-            a.push_back(qMakePair(it.key(), it.value()));
-        std::sort(a.begin(), a.end(), [](QPair<QString, int> const &p, QPair<QString, int> const &q) {
-            return p.second == q.second ? p.first < q.first : p.second > q.second; }
-        );
-
-        foreach (auto &p, a) {
-            cout << p.first << ' ' << p.second << endl;
-        }
+        total.print("", "Total", "");
     }
     bool operator()(QString filePath) {
         if (!filePath.endsWith(".stream"))
@@ -78,58 +56,94 @@ public:
         QDataStream st(&file);
         ImageAnnotation anno;
         st >> anno;
+        file.close();
         if (st.status() != QDataStream::Ok) {
             cout << "stream is bad: " << file.fileName() << endl;
             return false;
         }
-        int numBlock = 0;
-        int numCharacter = 0;
+        Statistics stat;
+        stat.cnt = 1;
         foreach (BlockAnnotation const &block, anno.blocks) {
-            int cnt = 0;
+            bool hasMask = false;
+            bool hasNotMask = false;
             foreach (CharacterAnnotation const &ch, block.characters) {
+                if (1 == ch.props.value("mask", 0)) {
+                    hasMask = true;
+                    continue;
+                }
                 if (ch.text.isEmpty())
                     continue;
+                hasNotMask = true;
                 QString const &text = ch.text;
-                if (bucket.find(text) == bucket.end())
-                    bucket[text] = 0;
-                bucket[text]++;
-                cnt++;
+                if (text == "*") {
+                    stat.numStar++;
+                } else {
+                    if (0 == ch.props.value("pass", 0))
+                        stat.numCharWithoutProps++;
+                    else
+                        stat.numCharWithProps++;
+                    if (bucket.find(text) == bucket.end())
+                        bucket[text] = 0;
+                    bucket[text]++;
+                }
             }
-            if (cnt > 0) {
-                numBlock++;
-                numCharacter += cnt;
-            }
+            if (hasMask)
+                stat.numMask++;
+            else if (hasNotMask)
+                stat.numBlkChar++;
         }
         QFileInfo fileInfo(file.fileName());
         QString dirName = fileInfo.dir().path();
-        cout << QString("%1 %2 %3 %4  %5").arg(++idx, 5).
-                arg(fileInfo.completeBaseName(), 10).
-                arg(numBlock, 6).
-                arg(numCharacter, 6).
-                arg(dirName) << endl;
-        sumNumBlock += numBlock;
-        sumNumCharacter += numCharacter;
-        if (folderCount.find(dirName) == folderCount.end())
-            folderCount[dirName] = qMakePair(0, 0);
-        ([](QPair<int, int> &p, int nb, int nc) {
-            p.first += nb;
-            p.second += nc;
-        })(folderCount[dirName], numBlock, numCharacter);
-        file.close();
+        stat.print(QString("%1").arg(++top), fileInfo.completeBaseName(), dirName);
+        folderStat[dirName] = folderStat[dirName] + stat;
         return true;
     }
 private:
     CharCounter(CharCounter const &);
-    int sumNumBlock;
-    int sumNumCharacter;
-    int idx;
+    struct Statistics {
+        Statistics(): cnt(0), numBlkChar(0), numCharWithProps(0), numCharWithoutProps(0), numStar(0), numMask(0) { }
+        int cnt;
+        int numBlkChar; // 不包含 mask
+        int numCharWithProps;
+        int numCharWithoutProps;
+        int numStar;
+        int numMask;
+        Statistics operator +(Statistics const &o) {
+            Statistics r;
+            r.cnt = cnt + o.cnt;
+            r.numBlkChar = numBlkChar + o.numBlkChar;
+            r.numCharWithProps = numCharWithProps + o.numCharWithProps;
+            r.numCharWithoutProps = numCharWithoutProps + o.numCharWithoutProps;
+            r.numStar = numStar + o.numStar;
+            r.numMask = numMask + o.numMask;
+            return r;
+        }
+        static void printTitle() {
+            cout << QString(QObject::tr("%1 ID 文件数 词组数 标注属性的字数 未标属性的字数 星数 Mask数  文件夹"))
+                    .arg("#", 5) << endl;
+        }
+        void print(QString id, QString name, QString folder) const {
+            cout << QString("%1 %2 %3 %4 %5 %6 %7 %8  %9").
+                    arg(id, 5).
+                    arg(name, 7).
+                    arg(cnt, 7).
+                    arg(numBlkChar, 7).
+                    arg(numCharWithProps, 7).
+                    arg(numCharWithoutProps, 7).
+                    arg(numStar, 7).
+                    arg(numMask, 7).
+                    arg(folder) << endl;
+        }
+    };
+    int top;
     QMap<QString, int> bucket;
-    QMap<QString, QPair<int, int> > folderCount;
+    QMap<QString, Statistics> folderStat;
 };
 
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     app.setApplicationVersion("v0.0.1");
+    cout.setCodec("UTF-8");
 
     QCommandLineParser parser;
     parser.process(app);
