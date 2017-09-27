@@ -31,6 +31,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     QVBoxLayout *verticalLayout_1;
     QVBoxLayout *verticalLayout_2;
     QVBoxLayout *verticalLayout_3;
+    QHBoxLayout *horizontalLayout_1;
     char const *propsText[sizeof(checkBoxProps) / sizeof(*checkBoxProps)] = {
             "(A)遮挡",
             "(S)背景复杂",
@@ -55,10 +56,25 @@ ImageViewer::ImageViewer(QWidget *parent)
     radioButtonProp = new QRadioButton(propWidget);
     radioButtonProp->setFocusPolicy(Qt::NoFocus);
     verticalLayout_1->addWidget(radioButtonProp);
+
+
+    horizontalLayout_1 = new QHBoxLayout();
+    horizontalLayout_1->setSpacing(6);
     radioButtonInsp = new QRadioButton(propWidget);
     radioButtonInsp->setFocusPolicy(Qt::NoFocus);
     radioButtonInsp->setVisible(false);
-    verticalLayout_1->addWidget(radioButtonInsp);
+    horizontalLayout_1->addWidget(radioButtonInsp);
+    horizontalSliderInsp = new QSlider(propWidget);
+    horizontalSliderInsp->setMinimum(32);
+    horizontalSliderInsp->setMaximum(96);
+    horizontalSliderInsp->setPageStep(5);
+    horizontalSliderInsp->setValue(40);
+    horizontalSliderInsp->setOrientation(Qt::Horizontal);
+    horizontalSliderInsp->setVisible(false);
+    connect(horizontalSliderInsp, SIGNAL(valueChanged(int)), this, SLOT(update()));
+    horizontalLayout_1->addWidget(horizontalSliderInsp);
+    verticalLayout_1->addLayout(horizontalLayout_1);
+
     verticalLayout_3->addLayout(verticalLayout_1);
     verticalLayout_2 = new QVBoxLayout();
     verticalLayout_2->setSpacing(6);
@@ -115,7 +131,7 @@ void ImageViewer::resizeEvent(QResizeEvent *event) {
     listWidget->setGeometry(x1, y1, w, h);
 
     int prop_w = 150;
-    int prop_h = 200;
+    int prop_h = 210;
     int gap_w = 5;
     propWidget->setGeometry(QRect(x1 - gap_w - prop_w, y1, prop_w, prop_h));
 
@@ -276,7 +292,7 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
             }
         statusLabel->setText(QString(""));
     } else if (radioButtonInsp->isChecked()) {
-        int xy_char = 40;
+        int xy_char = horizontalSliderInsp->value();
         int xy_gap = 8;
         int y_off_base = 30;
         int x_off = 0, y_off = y_off_base - respDisplayYOff;
@@ -414,8 +430,10 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         }
     } else if (event->key() == Qt::Key_F8 || event->key() == Qt::Key_F12) {
         static bool last_key_is_F8 = false;
-        if (last_key_is_F8 && event->key() == Qt::Key_F12)
+        if (last_key_is_F8 && event->key() == Qt::Key_F12) {
             radioButtonInsp->setVisible(true);
+            horizontalSliderInsp->setVisible(true);
+        }
         last_key_is_F8 = event->key() == Qt::Key_F8;
     } else if (radioButtonAnno->isChecked()) {
         if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {

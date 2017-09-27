@@ -108,6 +108,7 @@ private:
     QRadioButton *radioButtonAnno;
     QRadioButton *radioButtonProp;
     QRadioButton *radioButtonInsp;
+    QSlider *horizontalSliderInsp;
     QCheckBox *checkBoxProps[7];
     QLabel* statusLabel;
     QString annotationSuffix;
