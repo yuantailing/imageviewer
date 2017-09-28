@@ -57,7 +57,6 @@ ImageViewer::ImageViewer(QWidget *parent)
     radioButtonProp->setFocusPolicy(Qt::NoFocus);
     verticalLayout_1->addWidget(radioButtonProp);
 
-
     horizontalLayout_1 = new QHBoxLayout();
     horizontalLayout_1->setSpacing(6);
     radioButtonInsp = new QRadioButton(propWidget);
@@ -70,6 +69,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     horizontalSliderInsp->setPageStep(5);
     horizontalSliderInsp->setValue(40);
     horizontalSliderInsp->setOrientation(Qt::Horizontal);
+    horizontalSliderInsp->setFocusPolicy(Qt::NoFocus);
     horizontalSliderInsp->setVisible(false);
     connect(horizontalSliderInsp, SIGNAL(valueChanged(int)), this, SLOT(update()));
     horizontalLayout_1->addWidget(horizontalSliderInsp);
