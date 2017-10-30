@@ -143,7 +143,6 @@ private:
 int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
     app.setApplicationVersion("v0.0.1");
-    cout.setCodec("UTF-8");
 
     QCommandLineParser parser;
     parser.process(app);
