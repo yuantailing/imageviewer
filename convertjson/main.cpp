@@ -107,14 +107,18 @@ QJsonObject character2json(CharacterAnnotation const &charAnno) {
     res["adjusted_bbox"] = poly2adjustedbbox(charAnno.box);
     res["text"] = charAnno.text;
     res["is_chinese"] = isChinese(charAnno.text);
-    QJsonArray props;
-    if (1 == charAnno.props.value("covered", 0)) props.append("covered");
+    QVector<QString> props;
+    if (1 == charAnno.props.value("covered", 0)) props.append("occluded");
     if (1 == charAnno.props.value("bgcomplex", 0)) props.append("bgcomplex");
     if (1 == charAnno.props.value("raised", 0)) props.append("distorted");
     if (1 == charAnno.props.value("perspective", 0)) props.append("raised");
     if (1 == charAnno.props.value("wordart", 0)) props.append("wordart");
     if (1 == charAnno.props.value("handwritten", 0)) props.append("handwritten");
-    res["properties"] = props;
+    std::sort(props.begin(), props.end());
+    QJsonArray jprops;
+    for (QString const &s: props)
+        jprops.append(s);
+    res["attributes"] = jprops;
     return res;
 }
 
@@ -176,7 +180,7 @@ public:
                 if (text.length() != 1) {
                     if (text != "𫔭") {
                         cerr << "Warning: text length != 1 @ " << file.fileName() << endl;
-                        cerr << text.length() << text << endl;
+                        cerr << text.length() << " " << text << endl;
                     }
                     text = "*";
                 }
