@@ -130,7 +130,7 @@ class ImageAnnotation {
 public:
     QVector<BlockAnnotation> blocks;
     QPointF focusPoint;
-    enum { VERSION = 0x1002 };
+    enum { VERSION = 0x5001 };
 
 public:
     ImageAnnotation() {

@@ -17,12 +17,12 @@ PerspectiveHelper::PerspectiveHelper() {
     lastPointInvalid = false;
 }
 
-void PerspectiveHelper::onStartPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block) {
-    setPoint(p, scale, regular, block, false);
+void PerspectiveHelper::onStartPoint(QPointF p, qreal scale, bool, BlockAnnotation *block) {
+    setPoint(p, scale, true, block, false);
 }
 
-void PerspectiveHelper::onPendingPoint(QPointF p, qreal scale, bool regular, BlockAnnotation *block) {
-    setPoint(p, scale, regular, block, true);
+void PerspectiveHelper::onPendingPoint(QPointF p, qreal scale, bool, BlockAnnotation *block) {
+    setPoint(p, scale, true, block, true);
 }
 
 int PerspectiveHelper::onEndPoint(QPointF, qreal, bool, BlockAnnotation *) {

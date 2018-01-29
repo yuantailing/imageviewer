@@ -41,7 +41,7 @@ ImageViewer::ImageViewer(QWidget *parent)
             "(X)手写",
             "(C)标记为\"已标注属性\"",
     };
-    propWidget = new QWidget(centralWidget);
+    propWidget = new QWidget;
     propWidget->setAutoFillBackground(true);
     propWidget->installEventFilter(this);
     verticalLayout_3 = new QVBoxLayout(propWidget);
@@ -101,7 +101,7 @@ ImageViewer::ImageViewer(QWidget *parent)
     mouseLastPos = QPoint(0, 0);
     draggingImage = false;
     drawingLabel = false;
-    annotationSuffix = QString("stream");
+    annotationSuffix = QString("faces");
     resetHistory();
     changingPerspectiveHelper = false;
     selectedPerspectiveHelperIndex = -1;
@@ -187,6 +187,13 @@ void ImageViewer::paintEvent(QPaintEvent *event) {
                 qreal charOpacity = i == listSelectedBlock ? 1.0 : 1.0;
 
                 // 绘制辅助图层
+                if (i == listSelectedBlock) {
+                    painter.setOpacity(0.3);
+                    painter.setPen(Qt::NoPen);
+                    painter.setBrush(Qt::white);
+                    foreach (QPolygonF const &poly, block.getHelperPoly())
+                        painter.drawPolygon(toScreenPoly(poly));
+                }
                 painter.setOpacity(polyOpacity);
                 painter.setPen(QPen(Qt::blue, 3.0));
                 painter.setBrush(Qt::NoBrush);
@@ -436,24 +443,7 @@ void ImageViewer::keyPressEvent(QKeyEvent *event) {
         }
         last_key_is_F8 = event->key() == Qt::Key_F8;
     } else if (radioButtonAnno->isChecked()) {
-        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-            bool annoChanged = anno.onEnterPressed();
-            if (annoChanged) {
-                addHistoryPoint();
-                update();
-            } else {
-                inputStringToAnnotation(anno.blocks.size() - 1);
-            }
-        } else if (event->key() == Qt::Key_D) {
-            QString maskRes = anno.onMask(anno.blocks.size() - 1);
-            if (maskRes.isEmpty()) {
-                anno.onNewBlock();
-                addHistoryPoint();
-                update();
-            } else {
-                QMessageBox::information(this, tr("Image Viewer"), maskRes);
-            }
-        }
+        // do nothing
     } else if (radioButtonProp->isChecked()) {
         QMap<int, int> key2index({{Qt::Key_A, 0},
                                   {Qt::Key_S, 1},
@@ -544,6 +534,9 @@ void ImageViewer::mousePressEvent(QMouseEvent *event) {
             } else {
                 drawingLabel = true;
                 anno.onStartPoint(toImageUV(event->pos()), scaleFactor, shiftPressed);
+                if (!anno.blocks.empty() && anno.blocks.last().perspectiveHelper.numPoint == 4) {
+                    anno.onNewBlock();
+                }
                 update();
             }
         }
@@ -743,6 +736,7 @@ void ImageViewer::loadFile(QString const &fileName) {
     updateScaledImage();
     resetHistory();
     selectedBlockIndex = selectedCharIndex = -1;
+    listWidget->setCurrentRow(-1);
     QFile file(annotationFileName(imageFileName));
     if (file.open(QIODevice::ReadOnly)) {
         QDataStream stream(&file);
@@ -911,8 +905,10 @@ void ImageViewer::updateBlockList() {
         }
         if (block.characters.size() > 0 && 0 != block.characters.first().props.value("mask", 0)) {
             text = tr("<mask>");
-        } else if (text.isEmpty()) {
+        } else if (block.perspectiveHelper.numPoint == 0) {
             text = tr("<empty>");
+        } else if (block.perspectiveHelper.numPoint == 4) {
+            text = tr("Rect");
         } else {
             if (hasProps) {
                 if (radioButtonProp->isChecked())
@@ -1154,7 +1150,7 @@ void ImageViewer::onListWidgetSelect() {
 
 void ImageViewer::onListWidgetDoubleClicked(QModelIndex index) {
     if (index.isValid() && 0 <= index.row() && index.row() < anno.blocks.size()) {
-        inputStringToAnnotation(index.row());
+        // do nothing
     }
 }
 
