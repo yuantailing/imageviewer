@@ -46,9 +46,10 @@ public:
         total.print("", "Total", "");
     }
     bool operator()(QString filePath) {
-        if (!filePath.endsWith(".stream"))
+        if (!filePath.endsWith(".faces"))
             return true;
         QFile file(filePath);
+        QFileInfo fileInfo(file.fileName());
         if (!file.open(QIODevice::ReadOnly)) {
             cout << "open failed: " << file.fileName() << endl;
             return false;
@@ -64,35 +65,10 @@ public:
         Statistics stat;
         stat.cnt = 1;
         foreach (BlockAnnotation const &block, anno.blocks) {
-            bool hasMask = false;
-            bool hasNotMask = false;
-            foreach (CharacterAnnotation const &ch, block.characters) {
-                if (1 == ch.props.value("mask", 0)) {
-                    hasMask = true;
-                    continue;
-                }
-                if (ch.text.isEmpty())
-                    continue;
-                hasNotMask = true;
-                QString const &text = ch.text;
-                if (text == "*") {
-                    stat.numStar++;
-                } else {
-                    if (0 == ch.props.value("pass", 0))
-                        stat.numCharWithoutProps++;
-                    else
-                        stat.numCharWithProps++;
-                    if (bucket.find(text) == bucket.end())
-                        bucket[text] = 0;
-                    bucket[text]++;
-                }
-            }
-            if (hasMask)
-                stat.numMask++;
-            else if (hasNotMask)
+            if (block.perspectiveHelper.numPoint == 4) {
                 stat.numBlkChar++;
+            }
         }
-        QFileInfo fileInfo(file.fileName());
         QString dirName = fileInfo.dir().path();
         stat.print(QString("%1").arg(++top), fileInfo.completeBaseName(), dirName);
         folderStat[dirName] = folderStat[dirName] + stat;
@@ -119,19 +95,15 @@ private:
             return r;
         }
         static void printTitle() {
-            cout << QString(QObject::tr("%1 ID 文件数 词组数 标注属性的字数 未标属性的字数 星数 Mask数  文件夹"))
+            cout << QString(QObject::tr("%1 ID 文件数 标注数  文件夹"))
                     .arg("#", 5) << endl;
         }
         void print(QString id, QString name, QString folder) const {
-            cout << QString("%1 %2 %3 %4 %5 %6 %7 %8  %9").
+            cout << QString("%1 %2 %3 %4  %9").
                     arg(id, 5).
                     arg(name, 7).
                     arg(cnt, 7).
                     arg(numBlkChar, 7).
-                    arg(numCharWithProps, 7).
-                    arg(numCharWithoutProps, 7).
-                    arg(numStar, 7).
-                    arg(numMask, 7).
                     arg(folder) << endl;
         }
     };
@@ -155,7 +127,7 @@ int main(int argc, char *argv[]) {
 
     CharCounter charCounter;
     QStringList nameFilters;
-    nameFilters << "*.stream";
+    nameFilters << "*.faces";
     std::function<bool(QString)> cb([&](QString filePath) {
         return charCounter(filePath);
     });
